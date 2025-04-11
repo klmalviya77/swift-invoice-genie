@@ -7,7 +7,8 @@ import {
   PieChart, 
   Settings, 
   Menu, 
-  X 
+  X,
+  Package
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -20,6 +21,7 @@ const Dashboard: React.FC = () => {
   
   const navigation = [
     { name: 'Parties', path: '/parties', icon: Users },
+    { name: 'Products', path: '/products', icon: Package },
     { name: 'Invoices', path: '/invoices', icon: FileText },
     { name: 'Reports', path: '/reports', icon: PieChart },
     { name: 'Settings', path: '/settings', icon: Settings },

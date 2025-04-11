@@ -9,6 +9,7 @@ import Dashboard from "@/components/Dashboard";
 import Index from "@/pages/Index";
 import NotFound from "@/pages/NotFound";
 import PartiesPage from "@/pages/PartiesPage";
+import ProductsPage from "@/pages/ProductsPage";
 import InvoicesPage from "@/pages/InvoicesPage";
 import InvoiceFormPage from "@/pages/InvoiceFormPage";
 import InvoiceViewPage from "@/pages/InvoiceViewPage";
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />}>
               <Route index element={<Index />} />
               <Route path="parties" element={<PartiesPage />} />
+              <Route path="products" element={<ProductsPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
               <Route path="invoices/new" element={<InvoiceFormPage />} />
               <Route path="invoices/edit/:invoiceId" element={<InvoiceFormPage />} />

@@ -1,3 +1,4 @@
+
 // Types for our data
 export interface Party {
   id: string;
@@ -6,6 +7,15 @@ export interface Party {
   mobile: string;
   address: string;
   gst?: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  stock?: number;
+  unit?: string;
 }
 
 export interface InvoiceItem {
@@ -53,6 +63,7 @@ const defaultBusinessInfo: BusinessInfo = {
 const PARTIES_KEY = 'bizswift_parties';
 const INVOICES_KEY = 'bizswift_invoices';
 const BUSINESS_INFO_KEY = 'bizswift_business_info';
+const PRODUCTS_KEY = 'bizswift_products';
 
 // Helper functions
 export const getParties = (): Party[] => {
@@ -85,9 +96,64 @@ export const getPartyById = (id: string): Party | undefined => {
   return getParties().find(party => party.id === id);
 };
 
+// Products functions
+export const getProducts = (): Product[] => {
+  const productsJson = localStorage.getItem(PRODUCTS_KEY);
+  return productsJson ? JSON.parse(productsJson) : [];
+};
+
+export const saveProduct = (product: Product): void => {
+  const products = getProducts();
+  if (!product.id) {
+    product.id = crypto.randomUUID();
+  }
+  
+  const existingIndex = products.findIndex(p => p.id === product.id);
+  if (existingIndex >= 0) {
+    products[existingIndex] = product;
+  } else {
+    products.push(product);
+  }
+  
+  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+};
+
+export const deleteProduct = (id: string): void => {
+  const products = getProducts().filter(product => product.id !== id);
+  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+};
+
+export const getProductById = (id: string): Product | undefined => {
+  return getProducts().find(product => product.id === id);
+};
+
 export const getInvoices = (): Invoice[] => {
   const invoicesJson = localStorage.getItem(INVOICES_KEY);
   return invoicesJson ? JSON.parse(invoicesJson) : [];
+};
+
+// Improved invoice number generation
+export const generateInvoiceNumber = (): string => {
+  const invoices = getInvoices();
+  const date = new Date();
+  const year = date.getFullYear().toString().substring(2);
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  
+  // Find the highest invoice number for the current month
+  const monthPrefix = `INV-${year}${month}-`;
+  const monthInvoices = invoices.filter(inv => inv.invoiceNumber.startsWith(monthPrefix));
+  
+  let maxNumber = 0;
+  monthInvoices.forEach(invoice => {
+    const numberPart = invoice.invoiceNumber.split('-')[2];
+    const number = parseInt(numberPart);
+    if (!isNaN(number) && number > maxNumber) {
+      maxNumber = number;
+    }
+  });
+  
+  const nextNumber = maxNumber + 1;
+  return `${monthPrefix}${nextNumber.toString().padStart(3, '0')}`;
 };
 
 export const saveInvoice = (invoice: Invoice): Invoice => {
@@ -98,11 +164,7 @@ export const saveInvoice = (invoice: Invoice): Invoice => {
   
   // Generate invoice number if not present
   if (!invoice.invoiceNumber) {
-    const date = new Date();
-    const year = date.getFullYear().toString().substring(2);
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const count = invoices.length + 1;
-    invoice.invoiceNumber = `INV-${year}${month}-${count.toString().padStart(3, '0')}`;
+    invoice.invoiceNumber = generateInvoiceNumber();
   }
   
   const existingIndex = invoices.findIndex(i => i.id === invoice.id);
@@ -148,4 +210,49 @@ export const getInvoicesByDateRange = (startDate: string, endDate: string): Invo
     const invoiceDate = new Date(invoice.date);
     return invoiceDate >= start && invoiceDate <= end;
   });
+};
+
+// Generate a quick invoice for a single product
+export const generateQuickInvoice = (
+  partyId: string, 
+  productId: string, 
+  quantity: number, 
+  discount: number = 0, 
+  gstPercentage: number = 18,
+  status: 'paid' | 'unpaid' = 'unpaid'
+): Invoice => {
+  const product = getProductById(productId);
+  
+  if (!product) {
+    throw new Error('Product not found');
+  }
+  
+  const amount = product.price * quantity;
+  const subtotal = amount;
+  const gstAmount = (subtotal * gstPercentage) / 100;
+  const total = subtotal + gstAmount - discount;
+  
+  const invoiceItem: InvoiceItem = {
+    id: crypto.randomUUID(),
+    product: product.name,
+    qty: quantity,
+    rate: product.price,
+    amount: amount
+  };
+  
+  const invoice: Invoice = {
+    id: crypto.randomUUID(),
+    invoiceNumber: generateInvoiceNumber(),
+    partyId,
+    date: new Date().toISOString().split('T')[0],
+    items: [invoiceItem],
+    subtotal,
+    gstPercentage,
+    gstAmount,
+    discount,
+    total,
+    status
+  };
+  
+  return saveInvoice(invoice);
 };
