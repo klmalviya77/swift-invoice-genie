@@ -12,7 +12,8 @@ import {
   Search,
   Home,
   UserPlus,
-  ShoppingCart
+  ShoppingCart,
+  Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,9 +21,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
 const Dashboard: React.FC = () => {
-  // Default to closed sidebar on desktop
+  // Default to open sidebar on desktop
   const isMobile = useIsMobile();
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarOpen, setSidebarOpen] = React.useState(!isMobile);
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -46,18 +47,8 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Mobile sidebar toggle */}
-      <div className="fixed top-0 left-0 z-50 p-4 lg:hidden">
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={toggleSidebar}
-          className="bg-white"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </div>
-
+      {/* Mobile sidebar toggle - moved to header for better spacing */}
+      
       {/* Sidebar backdrop */}
       {isMobile && sidebarOpen && (
         <div 
@@ -75,20 +66,19 @@ const Dashboard: React.FC = () => {
         )}
       >
         <div className="flex flex-col h-full">
-          {/* Sidebar header - simpler to match design */}
+          {/* Sidebar header - with close button */}
           <div className="p-4 border-b flex items-center justify-between">
             <Link to="/" className="flex items-center" onClick={closeSidebar}>
               <span className="text-xl font-bold text-primary">BizSwift</span>
             </Link>
-            {isMobile && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={closeSidebar}
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            )}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={toggleSidebar}
+              className="lg:flex"
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
 
           {/* Navigation items - simplified style to match design */}
@@ -120,16 +110,26 @@ const Dashboard: React.FC = () => {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col">
-        {/* Header bar with search and user */}
+        {/* Header bar with menu toggle, search and user */}
         <header className="bg-white border-b border-gray-200 py-2 px-4 flex items-center justify-between">
-          <div className="w-full max-w-md">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input 
-                type="search"
-                placeholder="Search..."
-                className="pl-10 bg-gray-50 border-gray-200"
-              />
+          <div className="flex items-center">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={toggleSidebar}
+              className="bg-white mr-4"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            <div className="w-full max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  type="search"
+                  placeholder="Search..."
+                  className="pl-10 bg-gray-50 border-gray-200"
+                />
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -138,7 +138,7 @@ const Dashboard: React.FC = () => {
               size="icon"
               className="text-gray-500"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+              <Bell className="h-5 w-5" />
             </Button>
             <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary text-white text-sm font-medium">
               BS
