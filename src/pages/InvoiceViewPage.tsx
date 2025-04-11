@@ -265,8 +265,8 @@ const InvoiceViewPage: React.FC = () => {
           </div>
         </div>
         
-        {/* Terms & Signature */}
-        <div className="mt-8 pt-6 border-t">
+        {/* Terms & Signature - Added signature-section class to keep it together when printing */}
+        <div className="mt-8 pt-6 border-t signature-section">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <h4 className="font-medium mb-2">Terms & Conditions</h4>

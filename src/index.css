@@ -92,4 +92,9 @@
     size: A4;
     margin: 0.5cm;
   }
+  
+  /* Ensure the signature section stays together */
+  .signature-section {
+    page-break-inside: avoid;
+  }
 }

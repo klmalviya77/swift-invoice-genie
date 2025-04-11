@@ -15,8 +15,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
 const Dashboard: React.FC = () => {
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  // Default to closed sidebar on desktop, open on mobile
   const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const location = useLocation();
   
   const navigation = [
@@ -62,12 +63,13 @@ const Dashboard: React.FC = () => {
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform bg-white border-r border-gray-200 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto",
-          isMobile && (sidebarOpen ? "translate-x-0" : "-translate-x-full")
+          "fixed inset-y-0 left-0 z-40 w-64 transform bg-white border-r border-gray-200 transition-transform duration-300 ease-in-out lg:static lg:inset-auto",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
+          "lg:translate-x-0" // Always show on desktop but as a slim sidebar
         )}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b">
-          <Link to="/" className="flex items-center">
+          <Link to="/" className="flex items-center" onClick={closeSidebar}>
             <span className="text-xl font-bold text-primary">BizSwift</span>
           </Link>
           {isMobile && (
@@ -105,7 +107,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden lg:ml-64">
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
