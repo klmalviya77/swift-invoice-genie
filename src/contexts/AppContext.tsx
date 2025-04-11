@@ -4,6 +4,7 @@ import {
   Party,
   Invoice,
   BusinessInfo,
+  Product,
   getParties,
   saveParty,
   deleteParty,
@@ -13,12 +14,16 @@ import {
   getBusinessInfo,
   saveBusinessInfo,
   getPartyById,
-  getInvoiceById
+  getInvoiceById,
+  getProducts,
+  saveProduct as saveProductToStorage,
+  deleteProduct
 } from '@/lib/storage';
 
 interface AppContextType {
   parties: Party[];
   invoices: Invoice[];
+  products: Product[];
   businessInfo: BusinessInfo;
   addParty: (party: Party) => void;
   updateParty: (party: Party) => void;
@@ -26,6 +31,8 @@ interface AppContextType {
   addInvoice: (invoice: Invoice) => Invoice;
   updateInvoice: (invoice: Invoice) => void;
   removeInvoice: (id: string) => void;
+  saveProduct: (product: Product) => void;
+  removeProduct: (id: string) => void;
   updateBusinessInfo: (info: BusinessInfo) => void;
   getParty: (id: string) => Party | undefined;
   getInvoice: (id: string) => Invoice | undefined;
@@ -36,12 +43,14 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [parties, setParties] = useState<Party[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(getBusinessInfo());
 
   // Load initial data
   useEffect(() => {
     setParties(getParties());
     setInvoices(getInvoices());
+    setProducts(getProducts());
   }, []);
 
   const addParty = (party: Party) => {
@@ -75,6 +84,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInvoices(getInvoices());
   };
 
+  const saveProduct = (product: Product) => {
+    saveProductToStorage(product);
+    setProducts(getProducts());
+  };
+
+  const removeProduct = (id: string) => {
+    deleteProduct(id);
+    setProducts(getProducts());
+  };
+
   const updateBusinessInfo = (info: BusinessInfo) => {
     saveBusinessInfo(info);
     setBusinessInfo(info);
@@ -93,6 +112,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       value={{
         parties,
         invoices,
+        products,
         businessInfo,
         addParty,
         updateParty,
@@ -100,6 +120,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addInvoice,
         updateInvoice,
         removeInvoice,
+        saveProduct,
+        removeProduct,
         updateBusinessInfo,
         getParty,
         getInvoice

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -71,7 +70,7 @@ const ProductsPage: React.FC = () => {
     quantity: 1,
     discount: 0,
     gstPercentage: 18,
-    status: 'unpaid' as const
+    status: 'unpaid' as 'paid' | 'unpaid'
   });
 
   const toggleSort = (field: string) => {
@@ -393,7 +392,6 @@ const ProductsPage: React.FC = () => {
               </Button>
             </SheetTrigger>
             <SheetContent className="sm:max-w-md">
-              {/* Same form content as above */}
               <SheetHeader>
                 <SheetTitle>Add New Product</SheetTitle>
               </SheetHeader>
