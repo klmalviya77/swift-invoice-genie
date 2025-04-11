@@ -34,6 +34,8 @@
     --ring: 221.2 83.2% 53.3%;
 
     --radius: 0.5rem;
+    
+    --sidebar-width: 16rem;
   }
 
   .dark {
@@ -74,6 +76,34 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+  
+  /* Improved button styles */
+  button {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary/30;
+  }
+  
+  /* Card hover interactions */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-md;
+  }
+}
+
+/* Responsive fixes */
+@layer utilities {
+  /* Ensures the main content area adjusts correctly next to sidebar */
+  .main-content {
+    @apply w-full lg:pl-64;
+  }
+  
+  /* Better hover effects for navigation */
+  .nav-item-hover {
+    @apply transition-colors duration-200;
+  }
+  
+  /* Card hover effects */
+  .card-interactive {
+    @apply transition-all duration-200 hover:shadow-md hover:-translate-y-1;
   }
 }
 
