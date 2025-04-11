@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -107,7 +106,7 @@ const InvoiceViewPage: React.FC = () => {
   const togglePaymentStatus = () => {
     const updatedInvoice = { 
       ...invoice, 
-      status: invoice.status === 'paid' ? 'unpaid' : 'paid' 
+      status: invoice.status === 'paid' ? 'unpaid' as const : 'paid' as const 
     };
     updateInvoice(updatedInvoice);
     

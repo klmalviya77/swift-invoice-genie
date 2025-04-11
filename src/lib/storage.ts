@@ -1,4 +1,3 @@
-
 // Types for our data
 export interface Party {
   id: string;
@@ -91,7 +90,7 @@ export const getInvoices = (): Invoice[] => {
   return invoicesJson ? JSON.parse(invoicesJson) : [];
 };
 
-export const saveInvoice = (invoice: Invoice): void => {
+export const saveInvoice = (invoice: Invoice): Invoice => {
   const invoices = getInvoices();
   if (!invoice.id) {
     invoice.id = crypto.randomUUID();

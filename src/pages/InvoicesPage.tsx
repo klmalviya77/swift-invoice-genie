@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -27,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
@@ -55,7 +55,6 @@ const InvoicesPage: React.FC = () => {
     return sortDirection === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
-  // Filter invoices based on search term
   const filteredInvoices = invoices.filter((invoice) => {
     const party = parties.find(p => p.id === invoice.partyId);
     return (
@@ -66,7 +65,6 @@ const InvoicesPage: React.FC = () => {
     );
   });
 
-  // Sort invoices
   const sortedInvoices = [...filteredInvoices].sort((a, b) => {
     let compareA, compareB;
     
