@@ -11,6 +11,7 @@ import NotFound from "@/pages/NotFound";
 import PartiesPage from "@/pages/PartiesPage";
 import ProductsPage from "@/pages/ProductsPage";
 import InvoicesPage from "@/pages/InvoicesPage";
+import PurchaseInvoicesPage from "@/pages/PurchaseInvoicesPage";
 import InvoiceFormPage from "@/pages/InvoiceFormPage";
 import InvoiceViewPage from "@/pages/InvoiceViewPage";
 import ReportsPage from "@/pages/ReportsPage";
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="parties" element={<PartiesPage />} />
               <Route path="products" element={<ProductsPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
+              <Route path="purchase-invoices" element={<PurchaseInvoicesPage />} />
               <Route path="invoices/new" element={<InvoiceFormPage />} />
               <Route path="invoices/edit/:invoiceId" element={<InvoiceFormPage />} />
               <Route path="invoices/:invoiceId" element={<InvoiceViewPage />} />

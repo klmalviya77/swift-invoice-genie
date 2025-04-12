@@ -32,6 +32,10 @@ const InvoiceFormPage: React.FC = () => {
   const { toast } = useToast();
   const { parties, getInvoice, addInvoice, updateInvoice } = useApp();
   
+  // Check if this is a purchase invoice
+  const invoiceType = searchParams.get('type') || 'sales';
+  const isPurchaseInvoice = invoiceType === 'purchase';
+  
   const initialInvoice = invoiceId 
     ? getInvoice(invoiceId) 
     : {
@@ -224,7 +228,13 @@ const InvoiceFormPage: React.FC = () => {
           description: `Invoice ${savedInvoice.invoiceNumber} has been created successfully.`,
         });
       }
-      navigate(`/invoices/${invoiceId || invoice.id}`);
+      
+      // Redirect to appropriate page based on invoice type
+      if (isPurchaseInvoice) {
+        navigate(`/purchase-invoices`);
+      } else {
+        navigate(`/invoices/${invoiceId || invoice.id}`);
+      }
     } else {
       toast({
         title: 'Validation Error',
@@ -234,8 +244,13 @@ const InvoiceFormPage: React.FC = () => {
     }
   };
 
+  // Filter parties based on invoice type
+  const filteredParties = parties.filter(party => 
+    isPurchaseInvoice ? party.type === 'supplier' : party.type === 'customer'
+  );
+
   const getPartyOptions = () => {
-    return parties.map(party => (
+    return filteredParties.map(party => (
       <SelectItem key={party.id} value={party.id}>
         {party.name} ({party.type})
       </SelectItem>
@@ -248,16 +263,22 @@ const InvoiceFormPage: React.FC = () => {
         <Button 
           variant="outline" 
           size="icon" 
-          onClick={() => navigate('/invoices')}
+          onClick={() => isPurchaseInvoice ? navigate('/purchase-invoices') : navigate('/invoices')}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            {invoiceId ? 'Edit Invoice' : 'Create Invoice'}
+            {invoiceId 
+              ? `Edit ${isPurchaseInvoice ? 'Purchase' : 'Sales'} Invoice` 
+              : `Create ${isPurchaseInvoice ? 'Purchase' : 'Sales'} Invoice`}
           </h1>
           <p className="text-muted-foreground">
-            {invoiceId ? 'Update an existing invoice' : 'Create a new invoice for a customer or supplier'}
+            {invoiceId 
+              ? `Update an existing ${isPurchaseInvoice ? 'purchase' : 'sales'} invoice` 
+              : isPurchaseInvoice 
+                ? 'Create a new invoice for a supplier' 
+                : 'Create a new invoice for a customer'}
           </p>
         </div>
       </div>
@@ -266,16 +287,16 @@ const InvoiceFormPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <Label htmlFor="partyId" className={errors.partyId ? 'text-destructive' : ''}>
-              Select Party
+              Select {isPurchaseInvoice ? 'Supplier' : 'Customer'}
             </Label>
             <Select value={invoice.partyId} onValueChange={handlePartyChange}>
               <SelectTrigger className={errors.partyId ? 'border-destructive' : ''}>
-                <SelectValue placeholder="Select a customer or supplier" />
+                <SelectValue placeholder={`Select a ${isPurchaseInvoice ? 'supplier' : 'customer'}`} />
               </SelectTrigger>
               <SelectContent>
-                {parties.length === 0 ? (
+                {filteredParties.length === 0 ? (
                   <SelectItem value="no-parties" disabled>
-                    No parties available. Please add a party first.
+                    No {isPurchaseInvoice ? 'suppliers' : 'customers'} available. Please add one first.
                   </SelectItem>
                 ) : (
                   getPartyOptions()
@@ -294,7 +315,18 @@ const InvoiceFormPage: React.FC = () => {
               id="date"
               name="date"
               value={invoice.date}
-              onChange={handleInvoiceChange}
+              onChange={(e) => {
+                setInvoice(prev => ({
+                  ...prev,
+                  date: e.target.value
+                }));
+                if (errors.date) {
+                  setErrors(prev => {
+                    const { date, ...rest } = prev;
+                    return rest;
+                  });
+                }
+              }}
               className={errors.date ? 'border-destructive' : ''}
             />
             {errors.date && <p className="text-sm text-destructive">{errors.date}</p>}
@@ -424,7 +456,12 @@ const InvoiceFormPage: React.FC = () => {
                   id="gstPercentage"
                   name="gstPercentage"
                   value={invoice.gstPercentage}
-                  onChange={handleInvoiceChange}
+                  onChange={(e) => {
+                    setInvoice(prev => ({
+                      ...prev,
+                      gstPercentage: parseFloat(e.target.value) || 0
+                    }));
+                  }}
                   min="0"
                   max="100"
                   step="0.01"
@@ -447,7 +484,12 @@ const InvoiceFormPage: React.FC = () => {
                   id="discount"
                   name="discount"
                   value={invoice.discount}
-                  onChange={handleInvoiceChange}
+                  onChange={(e) => {
+                    setInvoice(prev => ({
+                      ...prev,
+                      discount: parseFloat(e.target.value) || 0
+                    }));
+                  }}
                   min="0"
                   step="0.01"
                   className="w-24 text-right"
@@ -466,7 +508,7 @@ const InvoiceFormPage: React.FC = () => {
           <Button 
             type="button" 
             variant="outline" 
-            onClick={() => navigate('/invoices')}
+            onClick={() => isPurchaseInvoice ? navigate('/purchase-invoices') : navigate('/invoices')}
           >
             Cancel
           </Button>

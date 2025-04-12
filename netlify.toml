@@ -1,0 +1,32 @@
+
+# Settings in the [build] context are global and are applied to all contexts
+# unless otherwise overridden by more specific contexts.
+[build]
+  # Directory to change to before starting a build.
+  # This is where we will look for package.json/.nvmrc/etc.
+  # If not set, defaults to the root directory.
+  publish = "dist"
+  command = "npm run build"
+
+# This is crucial for SPAs - redirects all paths to index.html
+# so that the React Router can handle them
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Setting environment variables to help with proper rendering
+[context.production.environment]
+  VITE_API_URL = "/"
+
+# Enable SPA mode (especially important for React Router)
+[build.environment]
+  NODE_VERSION = "18"
+
+# Optional: This will ensure all trailing slashes are redirected
+# to the non-trailing slash URL (or vice versa).
+[[redirects]]
+  from = "/*/"
+  to = "/:splat"
+  status = 301
+  force = true

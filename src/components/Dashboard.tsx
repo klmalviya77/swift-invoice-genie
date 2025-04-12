@@ -13,12 +13,14 @@ import {
   Home,
   UserPlus,
   ShoppingCart,
-  Bell
+  Bell,
+  Receipt,
+  FileInput
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import SearchComponent from './SearchComponent';
 
 const Dashboard: React.FC = () => {
   // Default to open sidebar on desktop
@@ -31,6 +33,7 @@ const Dashboard: React.FC = () => {
     { name: 'Dashboard', path: '/', icon: Home },
     { name: 'Party Management', path: '/parties', icon: Users },
     { name: 'Invoice & Billing', path: '/invoices', icon: FileText },
+    { name: 'Purchase Invoice', path: '/purchase-invoices', icon: Receipt },
     { name: 'Reports', path: '/reports', icon: PieChart },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
@@ -121,16 +124,7 @@ const Dashboard: React.FC = () => {
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <div className="w-full max-w-md">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input 
-                  type="search"
-                  placeholder="Search..."
-                  className="pl-10 bg-gray-50 border-gray-200"
-                />
-              </div>
-            </div>
+            <SearchComponent />
           </div>
           <div className="flex items-center gap-4">
             <Button 
