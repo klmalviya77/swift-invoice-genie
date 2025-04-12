@@ -1,4 +1,3 @@
-
 // Types for our data
 export interface Party {
   id: string;
@@ -7,6 +6,7 @@ export interface Party {
   mobile: string;
   address: string;
   gst?: string;
+  state?: string;
 }
 
 export interface Product {
@@ -16,6 +16,7 @@ export interface Product {
   price: number;
   stock?: number;
   unit?: string;
+  hsn?: string;
 }
 
 export interface InvoiceItem {
@@ -24,6 +25,7 @@ export interface InvoiceItem {
   qty: number;
   rate: number;
   amount: number;
+  hsn?: string;
 }
 
 export interface Invoice {
@@ -38,6 +40,12 @@ export interface Invoice {
   discount: number;
   total: number;
   status: 'paid' | 'unpaid';
+  deliveryBy?: string;
+  transport?: string;
+  vehicleNo?: string;
+  eWayBillNo?: string;
+  poNumber?: string;
+  paymentTerm?: string;
 }
 
 export interface BusinessInfo {
@@ -237,7 +245,8 @@ export const generateQuickInvoice = (
     product: product.name,
     qty: quantity,
     rate: product.price,
-    amount: amount
+    amount: amount,
+    hsn: product.hsn
   };
   
   const invoice: Invoice = {
@@ -251,7 +260,13 @@ export const generateQuickInvoice = (
     gstAmount,
     discount,
     total,
-    status
+    status,
+    deliveryBy: '',
+    transport: '',
+    vehicleNo: '',
+    eWayBillNo: '',
+    poNumber: '',
+    paymentTerm: ''
   };
   
   return saveInvoice(invoice);
