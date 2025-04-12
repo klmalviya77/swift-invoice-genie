@@ -107,15 +107,39 @@
   }
 }
 
+/* Print Styles */
 @media print {
-  .no-print {
-    display: none !important;
+  /* Hide everything except the invoice */
+  body * {
+    visibility: hidden;
   }
   
-  .invoice-container {
-    padding: 0;
-    margin: 0;
-    box-shadow: none;
+  /* Only show the invoice */
+  #invoice-print-container,
+  #invoice-print-container * {
+    visibility: visible;
+  }
+  
+  /* Position the invoice at the top of the page */
+  #invoice-print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  /* Remove any backgrounds, shadows, etc. */
+  .print-only-invoice {
+    box-shadow: none !important;
+    background-color: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .no-print {
+    display: none !important;
   }
   
   @page {
@@ -128,4 +152,11 @@
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
+}
+
+/* Netlify blank screen fix */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
