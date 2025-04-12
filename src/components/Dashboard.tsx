@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Users, 
@@ -15,12 +15,20 @@ import {
   ShoppingCart,
   Bell,
   Receipt,
-  FileInput
+  FileInput,
+  Wallet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import SearchComponent from './SearchComponent';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
+import { useToast } from '@/hooks/use-toast';
 
 const Dashboard: React.FC = () => {
   // Default to open sidebar on desktop
@@ -28,12 +36,20 @@ const Dashboard: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = React.useState(!isMobile);
   const location = useLocation();
   const navigate = useNavigate();
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
   
   const navigation = [
     { name: 'Dashboard', path: '/', icon: Home },
     { name: 'Party Management', path: '/parties', icon: Users },
     { name: 'Invoice & Billing', path: '/invoices', icon: FileText },
     { name: 'Purchase Invoice', path: '/purchase-invoices', icon: Receipt },
+    { name: 'Money Transaction', path: '/transactions', icon: Wallet, 
+      submenu: [
+        { name: 'Payment', path: '/transactions/payment', icon: Wallet },
+        { name: 'Receipt', path: '/transactions/receipt', icon: Wallet }
+      ] 
+    },
     { name: 'Reports', path: '/reports', icon: PieChart },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
@@ -46,6 +62,29 @@ const Dashboard: React.FC = () => {
     if (isMobile) {
       setSidebarOpen(false);
     }
+  };
+
+  // Close sidebar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isMobile && sidebarOpen && sidebarRef.current && 
+          !sidebarRef.current.contains(event.target as Node) &&
+          !(event.target as Element).closest('button[data-sidebar-toggle="true"]')) {
+        setSidebarOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMobile, sidebarOpen]);
+
+  const handleNotificationClick = () => {
+    toast({
+      title: "Notifications",
+      description: "You have no new notifications",
+    });
   };
 
   return (
@@ -62,6 +101,7 @@ const Dashboard: React.FC = () => {
 
       {/* Sidebar - narrow design similar to the image */}
       <div
+        ref={sidebarRef}
         className={cn(
           "fixed inset-y-0 left-0 z-40 w-64 bg-white transform transition-transform duration-300 ease-in-out border-r border-gray-200",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
@@ -90,6 +130,45 @@ const Dashboard: React.FC = () => {
               const isActive = location.pathname === item.path || 
                 (item.path !== '/' && location.pathname.startsWith(item.path));
               
+              if (item.submenu) {
+                return (
+                  <div key={item.name}>
+                    <div
+                      className={cn(
+                        "flex items-center px-4 py-3 text-sm font-medium",
+                        isActive
+                          ? "bg-gray-100 text-primary"
+                          : "text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      <item.icon className={cn("mr-3 h-5 w-5", isActive ? "text-primary" : "text-gray-400")} />
+                      {item.name}
+                    </div>
+                    <div className="pl-4">
+                      {item.submenu.map((subItem) => {
+                        const isSubActive = location.pathname === subItem.path;
+                        return (
+                          <Link
+                            key={subItem.name}
+                            to={subItem.path}
+                            className={cn(
+                              "flex items-center px-4 py-2 text-sm font-medium border-l border-gray-200",
+                              isSubActive
+                                ? "text-primary"
+                                : "text-gray-600 hover:bg-gray-50"
+                            )}
+                            onClick={closeSidebar}
+                          >
+                            <subItem.icon className={cn("mr-3 h-4 w-4", isSubActive ? "text-primary" : "text-gray-400")} />
+                            {subItem.name}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <Link
                   key={item.name}
@@ -121,6 +200,7 @@ const Dashboard: React.FC = () => {
               size="icon" 
               onClick={toggleSidebar}
               className="bg-white mr-4"
+              data-sidebar-toggle="true"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -131,6 +211,7 @@ const Dashboard: React.FC = () => {
               variant="outline" 
               size="icon"
               className="text-gray-500"
+              onClick={handleNotificationClick}
             >
               <Bell className="h-5 w-5" />
             </Button>
