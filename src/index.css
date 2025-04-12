@@ -128,29 +128,50 @@
     width: 100%;
     padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
   }
   
   /* Remove any backgrounds, shadows, etc. */
   .print-only-invoice {
     box-shadow: none !important;
     background-color: white !important;
-    padding: 0 !important;
+    padding: 10mm !important;
     margin: 0 !important;
+    border: none !important;
   }
   
   .no-print {
     display: none !important;
   }
   
+  /* Page settings */
   @page {
     size: A4;
-    margin: 0.5cm;
+    margin: 10mm;
   }
   
   /* Ensure the signature section stays together */
   .signature-section {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+  
+  /* Force table rows to break across pages if needed */
+  tbody tr {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+  
+  /* Keep table headers on each page */
+  thead {
+    display: table-header-group;
+  }
+  
+  /* Keep footer at bottom of each page */
+  tfoot {
+    display: table-footer-group;
   }
 }
 
