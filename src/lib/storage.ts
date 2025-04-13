@@ -39,7 +39,8 @@ export interface Invoice {
   gstAmount: number;
   discount: number;
   total: number;
-  status: 'paid' | 'unpaid';
+  paidAmount: number;
+  status: 'paid' | 'partial' | 'unpaid';
   deliveryBy?: string;
   transport?: string;
   vehicleNo?: string;
@@ -54,6 +55,7 @@ export interface Transaction {
   amount: number;
   date: string;
   partyId: string;
+  invoiceId?: string;
   mode: 'cash' | 'bank_transfer' | 'upi' | 'cheque';
   description?: string;
   reference?: string;
@@ -150,7 +152,15 @@ export const getProductById = (id: string): Product | undefined => {
 
 export const getInvoices = (): Invoice[] => {
   const invoicesJson = localStorage.getItem(INVOICES_KEY);
-  return invoicesJson ? JSON.parse(invoicesJson) : [];
+  const invoices = invoicesJson ? JSON.parse(invoicesJson) : [];
+  
+  // Ensure all invoices have paidAmount property (for backward compatibility)
+  return invoices.map((invoice: Invoice) => {
+    if (invoice.paidAmount === undefined) {
+      invoice.paidAmount = invoice.status === 'paid' ? invoice.total : 0;
+    }
+    return invoice;
+  });
 };
 
 // Improved invoice number generation
@@ -186,6 +196,20 @@ export const saveInvoice = (invoice: Invoice): Invoice => {
   // Generate invoice number if not present
   if (!invoice.invoiceNumber) {
     invoice.invoiceNumber = generateInvoiceNumber();
+  }
+  
+  // Ensure paidAmount exists
+  if (invoice.paidAmount === undefined) {
+    invoice.paidAmount = invoice.status === 'paid' ? invoice.total : 0;
+  }
+  
+  // Set status based on payment status
+  if (invoice.paidAmount >= invoice.total) {
+    invoice.status = 'paid';
+  } else if (invoice.paidAmount > 0) {
+    invoice.status = 'partial';
+  } else {
+    invoice.status = 'unpaid';
   }
   
   const existingIndex = invoices.findIndex(i => i.id === invoice.id);
@@ -240,7 +264,7 @@ export const generateQuickInvoice = (
   quantity: number, 
   discount: number = 0, 
   gstPercentage: number = 18,
-  status: 'paid' | 'unpaid' = 'unpaid'
+  status: 'paid' | 'partial' | 'unpaid' = 'unpaid'
 ): Invoice => {
   const product = getProductById(productId);
   
@@ -273,6 +297,7 @@ export const generateQuickInvoice = (
     gstAmount,
     discount,
     total,
+    paidAmount: status === 'paid' ? total : 0,
     status,
     deliveryBy: '',
     transport: '',
@@ -322,4 +347,41 @@ export const getTransactionsByPartyId = (partyId: string): Transaction[] => {
 
 export const getTransactionsByType = (type: 'payment' | 'receipt'): Transaction[] => {
   return getTransactions().filter(transaction => transaction.type === type);
+};
+
+// New function to get transactions by invoice ID
+export const getTransactionsByInvoiceId = (invoiceId: string): Transaction[] => {
+  return getTransactions().filter(transaction => transaction.invoiceId === invoiceId);
+};
+
+// New function to calculate remaining amount for an invoice
+export const getInvoiceRemainingAmount = (invoiceId: string): number => {
+  const invoice = getInvoiceById(invoiceId);
+  if (!invoice) return 0;
+  
+  return Math.max(0, invoice.total - invoice.paidAmount);
+};
+
+// New function to update invoice payment status after a transaction
+export const updateInvoicePaymentStatus = (invoice: Invoice): Invoice => {
+  // Calculate the sum of all transactions for this invoice
+  const transactions = getTransactionsByInvoiceId(invoice.id);
+  const paidAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
+  
+  // Update the invoice
+  const updatedInvoice = {
+    ...invoice,
+    paidAmount: paidAmount
+  };
+  
+  // Set status based on payment status
+  if (paidAmount >= invoice.total) {
+    updatedInvoice.status = 'paid';
+  } else if (paidAmount > 0) {
+    updatedInvoice.status = 'partial';
+  } else {
+    updatedInvoice.status = 'unpaid';
+  }
+  
+  return saveInvoice(updatedInvoice);
 };

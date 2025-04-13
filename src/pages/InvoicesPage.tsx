@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -112,6 +113,20 @@ const InvoicesPage: React.FC = () => {
     return party ? party.name : 'Unknown Party';
   };
 
+  const getStatusBadge = (status: string, paidAmount: number, total: number) => {
+    if (status === 'paid') {
+      return <Badge variant="default" className="capitalize">Paid</Badge>;
+    } else if (status === 'partial') {
+      return (
+        <Badge variant="outline" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+          Partial ({Math.round((paidAmount / total) * 100)}%)
+        </Badge>
+      );
+    } else {
+      return <Badge variant="destructive" className="capitalize">Unpaid</Badge>;
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -203,9 +218,7 @@ const InvoicesPage: React.FC = () => {
                   <TableCell>{formatDate(invoice.date)}</TableCell>
                   <TableCell className="text-right">₹{invoice.total.toLocaleString('en-IN')}</TableCell>
                   <TableCell>
-                    <Badge variant={invoice.status === 'paid' ? 'default' : 'destructive'} className="capitalize">
-                      {invoice.status}
-                    </Badge>
+                    {getStatusBadge(invoice.status, invoice.paidAmount || 0, invoice.total)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

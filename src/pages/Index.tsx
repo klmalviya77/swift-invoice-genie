@@ -1,274 +1,430 @@
 
-import React, { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  UserPlus, 
-  FileText, 
-  ShoppingCart,
-  ArrowUp, 
-  ArrowDown,
-  DollarSign,
-  Users,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { ArrowUpRight, BadgeDollarSign, CircleDollarSign, User, Users, IndianRupee, ShoppingCart, CalendarDays, LineChart, Receipt, CreditCard } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useApp } from '@/contexts/AppContext';
 
-const Index = () => {
-  const navigate = useNavigate();
-  const { parties, invoices, transactions } = useApp();
-  
-  // Calculate totals
-  const salesInvoices = invoices.filter(inv => 
-    parties.find(p => p.id === inv.partyId)?.type === 'customer'
-  );
-  const purchaseInvoices = invoices.filter(inv => 
-    parties.find(p => p.id === inv.partyId)?.type === 'supplier'
-  );
-  
-  const totalSales = salesInvoices.reduce((sum, inv) => sum + inv.total, 0);
-  const totalPurchases = purchaseInvoices.reduce((sum, inv) => sum + inv.total, 0);
-  const outstandingAmount = salesInvoices
-    .filter(inv => inv.status === 'unpaid')
-    .reduce((sum, inv) => sum + inv.total, 0);
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A28BFC'];
 
-  // Calculate percentage changes
-  const calculatePercentageChange = useMemo(() => {
-    // Outstanding percentage calculation
-    const previousOutstanding = invoices
-      .filter(inv => {
-        // Invoices from last month
-        const invoiceDate = new Date(inv.date);
-        const today = new Date();
-        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-        return invoiceDate >= lastMonth && invoiceDate <= today && inv.status === 'unpaid';
-      })
-      .reduce((sum, inv) => sum + inv.total, 0);
-    
-    const outstandingChange = previousOutstanding > 0 
-      ? ((outstandingAmount - previousOutstanding) / previousOutstanding) * 100
-      : 0;
-    
-    // Parties percentage calculation
-    const recentTransactions = transactions
-      .filter(t => {
-        const transactionDate = new Date(t.date);
-        const today = new Date();
-        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-        return transactionDate >= lastMonth;
-      });
-    
-    const activePartiesLastMonth = [...new Set(recentTransactions.map(t => t.partyId))].length;
-    const partiesChange = activePartiesLastMonth > 0 
-      ? ((parties.length - activePartiesLastMonth) / activePartiesLastMonth) * 100
-      : (parties.length > 0 ? 100 : 0);
-    
-    return {
-      outstandingChange: outstandingChange.toFixed(1),
-      partiesChange: partiesChange.toFixed(1)
-    };
-  }, [invoices, parties, transactions, outstandingAmount]);
+const Index: React.FC = () => {
+  const { invoices, parties, transactions } = useApp();
+  const [invoiceStats, setInvoiceStats] = useState({
+    total: 0,
+    pending: 0,
+    paid: 0,
+    pendingPercentage: 0,
+  });
+  const [partyStats, setPartyStats] = useState({
+    total: 0,
+    customers: 0,
+    suppliers: 0,
+    customersPercentage: 0,
+  });
 
-  // For quick actions cards
-  const quickActions = [
-    {
-      title: 'Add',
-      subtitle: 'Party',
-      icon: UserPlus,
-      actions: [
-        {
-          label: 'Add',
-          onClick: () => navigate('/parties'),
-        }
-      ],
-      details: [
-        {
-          label: 'Add new customer or supplier',
-          action: null
-        }
-      ]
-    },
-    {
-      title: 'Create',
-      subtitle: 'Invoice',
-      icon: DollarSign,
-      actions: [
-        {
-          label: 'Generate',
-          onClick: () => navigate('/invoices/new'),
-        },
-        {
-          label: 'Create',
-          onClick: () => navigate('/invoices/new'),
-        }
-      ],
-      details: [
-        {
-          label: 'a new sales invoice',
-          action: null
-        }
-      ]
-    },
-    {
-      title: 'Purchase',
-      subtitle: 'Entry',
-      icon: ShoppingCart,
-      actions: [
-        {
-          label: 'Record',
-          onClick: () => navigate('/invoices/new'),
-        },
-        {
-          label: 'Record',
-          onClick: () => navigate('/invoices/new'),
-        }
-      ],
-      details: [
-        {
-          label: 'a new purchase bill',
-          action: null
-        }
-      ]
+  const [salesData, setSalesData] = useState<any[]>([]);
+  const [selectedTab, setSelectedTab] = useState('overview');
+
+  useEffect(() => {
+    // Calculate invoice statistics
+    const totalInvoices = invoices.length;
+    const pendingInvoices = invoices.filter(i => i.status === 'unpaid' || i.status === 'partial').length;
+    const paidInvoices = invoices.filter(i => i.status === 'paid').length;
+    
+    const pendingAmount = invoices
+      .filter(i => i.status === 'unpaid' || i.status === 'partial')
+      .reduce((sum, invoice) => sum + (invoice.total - (invoice.paidAmount || 0)), 0);
+    
+    const totalAmount = invoices.reduce((sum, invoice) => sum + invoice.total, 0);
+    
+    setInvoiceStats({
+      total: totalInvoices,
+      pending: pendingInvoices,
+      paid: paidInvoices,
+      pendingPercentage: totalAmount > 0 ? Math.round((pendingAmount / totalAmount) * 100) : 0,
+    });
+
+    // Calculate party statistics
+    const totalParties = parties.length;
+    const customers = parties.filter(p => p.type === 'customer').length;
+    const suppliers = parties.filter(p => p.type === 'supplier').length;
+    
+    setPartyStats({
+      total: totalParties,
+      customers,
+      suppliers,
+      customersPercentage: totalParties > 0 ? Math.round((customers / totalParties) * 100) : 0,
+    });
+
+    // Prepare monthly sales data
+    const last6Months = new Date();
+    last6Months.setMonth(last6Months.getMonth() - 5);
+    
+    const monthlySales: Record<string, number> = {};
+    
+    // Initialize the last 6 months
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(last6Months);
+      date.setMonth(date.getMonth() + i);
+      const monthYear = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      monthlySales[monthYear] = 0;
     }
+    
+    // Calculate sales for each month
+    invoices.forEach(invoice => {
+      const invoiceDate = new Date(invoice.date);
+      if (invoiceDate >= last6Months) {
+        const monthYear = invoiceDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        if (monthlySales[monthYear] !== undefined) {
+          monthlySales[monthYear] += invoice.total;
+        }
+      }
+    });
+    
+    // Convert to array format for the chart
+    const chartData = Object.entries(monthlySales).map(([name, value]) => ({
+      name,
+      amount: value,
+    }));
+    
+    setSalesData(chartData);
+  }, [invoices, parties]);
+
+  // Calculate transaction statistics (last 30 days)
+  const last30Days = new Date();
+  last30Days.setDate(last30Days.getDate() - 30);
+  
+  const recentTransactions = transactions
+    .filter(t => new Date(t.date) >= last30Days)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const totalReceived = recentTransactions
+    .filter(t => t.type === 'receipt')
+    .reduce((sum, t) => sum + t.amount, 0);
+  
+  const totalPaid = recentTransactions
+    .filter(t => t.type === 'payment')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Prepare transaction data for pie chart
+  const transactionPieData = [
+    { name: 'Receipts', value: totalReceived },
+    { name: 'Payments', value: totalPaid },
   ];
 
+  // Top customers data
+  const topCustomers = [...parties]
+    .filter(p => p.type === 'customer')
+    .map(customer => {
+      const customerInvoices = invoices.filter(i => i.partyId === customer.id);
+      const totalAmount = customerInvoices.reduce((sum, i) => sum + i.total, 0);
+      return {
+        id: customer.id,
+        name: customer.name,
+        amount: totalAmount,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Business overview and quick actions</p>
+    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+      <div className="flex items-center justify-between space-y-2">
+        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <div className="flex items-center space-x-2">
+          <Link to="/invoices/new" className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+            Create Invoice
+          </Link>
+        </div>
       </div>
-
-      {/* Stats overview */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <div className="flex p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-primary/10 rounded-full">
-                <DollarSign className="h-6 w-6 text-primary" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-muted-foreground">Total Sales</p>
-                <div className="flex items-center">
-                  <h3 className="text-2xl font-bold">₹{totalSales.toLocaleString('en-IN')}</h3>
-                  <span className="ml-2 text-green-500 flex items-center">
-                    <ArrowUp className="h-4 w-4" />
-                  </span>
+      <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Sales
+                </CardTitle>
+                <CircleDollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₹{invoices
+                  .filter(i => {
+                    const party = parties.find(p => p.id === i.partyId);
+                    return party && party.type === 'customer';
+                  })
+                  .reduce((sum, i) => sum + i.total, 0)
+                  .toLocaleString('en-IN')}
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <div className="flex p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full">
-                <ShoppingCart className="h-6 w-6 text-red-500" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-muted-foreground">Total Purchases</p>
-                <div className="flex items-center">
-                  <h3 className="text-2xl font-bold">₹{totalPurchases.toLocaleString('en-IN')}</h3>
-                  <span className="ml-2 text-red-500 flex items-center">
-                    <ArrowDown className="h-4 w-4" />
-                  </span>
+                <p className="text-xs text-muted-foreground">
+                  Total sales from customer invoices
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Outstanding
+                </CardTitle>
+                <BadgeDollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₹{invoices
+                  .filter(i => (i.status === 'unpaid' || i.status === 'partial') && {
+                    const party = parties.find(p => p.id === i.partyId);
+                    return party && party.type === 'customer';
+                  })
+                  .reduce((sum, i) => sum + (i.total - (i.paidAmount || 0)), 0)
+                  .toLocaleString('en-IN')}
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <div className="flex p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-yellow-100 rounded-full">
-                <DollarSign className="h-6 w-6 text-yellow-500" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-muted-foreground">Outstanding</p>
-                <div className="flex items-center">
-                  <h3 className="text-2xl font-bold">₹{outstandingAmount.toLocaleString('en-IN')}</h3>
-                  <span className="ml-2 flex items-center" 
-                    className={parseFloat(calculatePercentageChange.outstandingChange) > 0 
-                      ? "text-red-500" 
-                      : "text-green-500"}>
-                    <span className="text-xs font-medium">
-                      {parseFloat(calculatePercentageChange.outstandingChange) > 0 ? '+' : ''}
-                      {calculatePercentageChange.outstandingChange}%
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            <div className="flex p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-full">
-                <Users className="h-6 w-6 text-green-500" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-muted-foreground">Parties</p>
-                <div className="flex items-center">
-                  <h3 className="text-2xl font-bold">{parties.length}</h3>
-                  <span className="ml-2 text-green-500 flex items-center">
-                    <span className="text-xs font-medium">
-                      {parseFloat(calculatePercentageChange.partiesChange) > 0 ? '+' : ''}
-                      {calculatePercentageChange.partiesChange}%
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions Section */}
-      <div>
-        <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {quickActions.map((action, index) => (
-            <Card key={index} className="overflow-hidden">
-              <CardContent className="p-6">
-                <div className="flex items-center mb-4">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100">
-                    <action.icon className="h-5 w-5 text-gray-600" />
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="font-medium">{action.title}</h3>
-                    <p className="text-sm text-muted-foreground">{action.subtitle}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    {action.actions.map((btn, btnIdx) => (
-                      <Button 
-                        key={btnIdx} 
-                        variant="outline" 
-                        size="sm"
-                        onClick={btn.onClick}
-                      >
-                        {btn.label}
-                      </Button>
-                    ))}
-                  </div>
-                  
-                  {action.details.map((detail, detailIdx) => (
-                    <div key={detailIdx} className="text-sm text-gray-500">
-                      {detail.label}
+                <p className="text-xs text-muted-foreground">
+                  {invoiceStats.pendingPercentage}% of total amount
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Parties
+                </CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{partyStats.total}</div>
+                <p className="text-xs text-muted-foreground">
+                  {partyStats.customersPercentage}% are customers
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Recent Payments
+                </CardTitle>
+                <IndianRupee className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₹{totalReceived.toLocaleString('en-IN')}</div>
+                <p className="text-xs text-muted-foreground">
+                  +₹{totalReceived.toLocaleString('en-IN')} in last 30 days
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+            <Card className="col-span-4">
+              <CardHeader>
+                <CardTitle>Sales Overview</CardTitle>
+                <CardDescription>
+                  Monthly sales for the last 6 months
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pl-2">
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={salesData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      tickFormatter={(value) => value.split(' ')[0]}
+                    />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Amount']}
+                    />
+                    <Legend />
+                    <Bar dataKey="amount" fill="#4f46e5" name="Sales" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card className="col-span-3">
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>
+                  Payment activity in the last 30 days
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={transactionPieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {transactionPieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => [`₹${Number(value).toLocaleString('en-IN')}`, '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2 mt-4">
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 rounded-full bg-[#0088FE] mr-2"></div>
+                    <div className="flex-1 flex justify-between">
+                      <span>Receipts</span>
+                      <span>₹{totalReceived.toLocaleString('en-IN')}</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 rounded-full bg-[#00C49F] mr-2"></div>
+                    <div className="flex-1 flex justify-between">
+                      <span>Payments</span>
+                      <span>₹{totalPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      </div>
+          </div>
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Customers</CardTitle>
+                <CardDescription>Top 5 customers by sales volume</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {topCustomers.length > 0 ? (
+                    topCustomers.map((customer, index) => (
+                      <div key={customer.id} className="flex items-center">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+                          <User className="h-5 w-5 text-primary" />
+                        </div>
+                        <div className="ml-4 space-y-1">
+                          <p className="text-sm font-medium leading-none">{customer.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            ₹{customer.amount.toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                        <div className="ml-auto font-medium">#{index + 1}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No customer data available</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Transactions</CardTitle>
+                <CardDescription>Recent payment activity</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {recentTransactions.slice(0, 5).map(transaction => {
+                    const party = parties.find(p => p.id === transaction.partyId);
+                    return (
+                      <div key={transaction.id} className="flex items-center">
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                          transaction.type === 'receipt' ? 'bg-green-100' : 'bg-red-100'
+                        }`}>
+                          {transaction.type === 'receipt' ? (
+                            <Receipt className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <CreditCard className="h-5 w-5 text-red-600" />
+                          )}
+                        </div>
+                        <div className="ml-4 space-y-1">
+                          <p className="text-sm font-medium leading-none">
+                            {party ? party.name : 'Unknown Party'}
+                          </p>
+                          <p className="text-xs text-muted-foreground flex items-center">
+                            <CalendarDays className="h-3 w-3 mr-1" />
+                            {new Date(transaction.date).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className={`ml-auto font-medium ${
+                          transaction.type === 'receipt' ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {transaction.type === 'receipt' ? '+' : '-'}
+                          ₹{transaction.amount.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {recentTransactions.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No recent transactions</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Card className="col-span-1">
+              <CardHeader>
+                <CardTitle>Invoice Status</CardTitle>
+                <CardDescription>Paid vs. unpaid invoices</CardDescription>
+              </CardHeader>
+              <CardContent className="pl-2">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Paid', value: invoiceStats.paid },
+                        { name: 'Partial', value: invoices.filter(i => i.status === 'partial').length },
+                        { name: 'Unpaid', value: invoices.filter(i => i.status === 'unpaid').length }
+                      ]}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      <Cell fill="#10b981" />
+                      <Cell fill="#f59e0b" />
+                      <Cell fill="#ef4444" />
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2 mt-4">
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 rounded-full bg-[#10b981] mr-2"></div>
+                    <div className="flex-1 flex justify-between">
+                      <span>Paid</span>
+                      <span>{invoiceStats.paid}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 rounded-full bg-[#f59e0b] mr-2"></div>
+                    <div className="flex-1 flex justify-between">
+                      <span>Partial</span>
+                      <span>{invoices.filter(i => i.status === 'partial').length}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 rounded-full bg-[#ef4444] mr-2"></div>
+                    <div className="flex-1 flex justify-between">
+                      <span>Unpaid</span>
+                      <span>{invoices.filter(i => i.status === 'unpaid').length}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            {/* More analytics cards can be added here */}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -7,24 +7,68 @@ import {
   Download, 
   Phone, 
   Mail, 
-  Edit 
+  Edit,
+  CreditCard,
+  IndianRupee
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ui/use-toast';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { 
+  Table, 
+  TableHeader, 
+  TableBody, 
+  TableRow, 
+  TableHead, 
+  TableCell 
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Transaction } from '@/lib/storage';
 
 const InvoiceViewPage: React.FC = () => {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { getInvoice, getParty, businessInfo, updateInvoice } = useApp();
+  const { 
+    getInvoice, 
+    getParty, 
+    businessInfo, 
+    updateInvoice, 
+    getTransactionsByInvoice,
+    getInvoiceRemainingBalance,
+    recordPartialPayment
+  } = useApp();
   const printRef = useRef<HTMLDivElement>(null);
+  
+  const [isPartialPaymentOpen, setIsPartialPaymentOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'bank_transfer' | 'upi' | 'cheque'>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentDescription, setPaymentDescription] = useState('');
   
   const invoice = invoiceId ? getInvoice(invoiceId) : null;
   const party = invoice ? getParty(invoice.partyId) : null;
+  const transactions = invoiceId ? getTransactionsByInvoice(invoiceId) : [];
+  const remainingBalance = invoiceId ? getInvoiceRemainingBalance(invoiceId) : 0;
   
   if (!invoice || !party) {
     return (
@@ -118,7 +162,8 @@ const InvoiceViewPage: React.FC = () => {
   const togglePaymentStatus = () => {
     const updatedInvoice = { 
       ...invoice, 
-      status: invoice.status === 'paid' ? 'unpaid' as const : 'paid' as const 
+      status: invoice.status === 'paid' ? 'unpaid' as const : 'paid' as const,
+      paidAmount: invoice.status === 'paid' ? 0 : invoice.total 
     };
     updateInvoice(updatedInvoice);
     
@@ -135,6 +180,47 @@ const InvoiceViewPage: React.FC = () => {
       month: 'short',
       year: 'numeric',
     });
+  };
+  
+  const handlePartialPayment = () => {
+    if (!paymentAmount || paymentAmount <= 0) {
+      toast({
+        title: 'Invalid Amount',
+        description: 'Please enter a valid payment amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (paymentAmount > remainingBalance) {
+      toast({
+        title: 'Amount Too High',
+        description: `Maximum payment amount is ₹${remainingBalance.toLocaleString('en-IN')}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    recordPartialPayment(
+      invoice.id,
+      paymentAmount,
+      {
+        mode: paymentMode,
+        reference: paymentReference,
+        description: paymentDescription || `Partial payment for invoice ${invoice.invoiceNumber}`
+      }
+    );
+    
+    toast({
+      title: 'Payment Recorded',
+      description: `₹${paymentAmount.toLocaleString('en-IN')} payment has been recorded.`,
+    });
+    
+    // Reset form and close dialog
+    setPaymentAmount(0);
+    setPaymentReference('');
+    setPaymentDescription('');
+    setIsPartialPaymentOpen(false);
   };
 
   const isPurchaseInvoice = party.type === 'supplier';
@@ -168,6 +254,86 @@ const InvoiceViewPage: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap gap-2">
+          {invoice.status !== 'paid' && (
+            <Dialog open={isPartialPaymentOpen} onOpenChange={setIsPartialPaymentOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <CreditCard className="mr-2 h-4 w-4" /> Record Payment
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Record Payment</DialogTitle>
+                  <DialogDescription>
+                    Record a payment for Invoice #{invoice.invoiceNumber}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="amount">Amount</Label>
+                    <div className="relative">
+                      <IndianRupee className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="amount"
+                        placeholder="0.00"
+                        type="number"
+                        className="pl-9"
+                        value={paymentAmount || ''}
+                        onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                        max={remainingBalance}
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Remaining balance: ₹{remainingBalance.toLocaleString('en-IN')}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="paymentMode">Payment Mode</Label>
+                    <Select value={paymentMode} onValueChange={(value) => setPaymentMode(value as any)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select payment mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="upi">UPI</SelectItem>
+                        <SelectItem value="cheque">Cheque</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="reference">Reference Number</Label>
+                    <Input
+                      id="reference"
+                      placeholder="Transaction ID, Cheque number, etc."
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="description">Description (Optional)</Label>
+                    <Input
+                      id="description"
+                      placeholder="Additional notes about this payment"
+                      value={paymentDescription}
+                      onChange={(e) => setPaymentDescription(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsPartialPaymentOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handlePartialPayment}>
+                    Record Payment
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
           <Button variant="outline" onClick={togglePaymentStatus}>
             Mark as {invoice.status === 'paid' ? 'Unpaid' : 'Paid'}
           </Button>
@@ -190,6 +356,47 @@ const InvoiceViewPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Payment Transactions */}
+      {transactions.length > 0 && (
+        <div className="border rounded-md p-4 no-print">
+          <h2 className="text-lg font-medium mb-3">Payment History</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Reference</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {transactions.map((transaction) => (
+                <TableRow key={transaction.id}>
+                  <TableCell>{formatDate(transaction.date)}</TableCell>
+                  <TableCell className="capitalize">{transaction.mode.replace('_', ' ')}</TableCell>
+                  <TableCell>{transaction.reference || '-'}</TableCell>
+                  <TableCell>{transaction.description || '-'}</TableCell>
+                  <TableCell className="text-right font-medium">₹{transaction.amount.toLocaleString('en-IN')}</TableCell>
+                </TableRow>
+              ))}
+              <TableRow>
+                <TableCell colSpan={4} className="text-right font-medium">Total Paid:</TableCell>
+                <TableCell className="text-right font-medium">₹{invoice.paidAmount.toLocaleString('en-IN')}</TableCell>
+              </TableRow>
+              {invoice.status !== 'paid' && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-right font-medium">Balance Due:</TableCell>
+                  <TableCell className="text-right font-medium text-destructive">
+                    ₹{(invoice.total - invoice.paidAmount).toLocaleString('en-IN')}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {/* New Invoice Container that will be printed */}
       <div id="invoice-print-container" className="bg-white border border-gray-200 rounded-md shadow-sm p-6 print:p-4 print:shadow-none" ref={printRef}>
@@ -308,11 +515,19 @@ const InvoiceViewPage: React.FC = () => {
                     <td className="py-2 text-right font-bold text-lg">₹{invoice.total.toFixed(2)}</td>
                   </tr>
                   <tr>
-                    <td className="pt-2 font-semibold">Amount Due:</td>
+                    <td className="pt-2 font-semibold">Amount Paid:</td>
+                    <td className="pt-2 text-right">₹{invoice.paidAmount.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td className="pt-2 font-semibold">Balance Due:</td>
                     <td className="pt-2 text-right font-bold">
-                      ₹{invoice.total.toFixed(2)}
+                      ₹{(invoice.total - invoice.paidAmount).toFixed(2)}
                       <span className={`ml-2 inline-block px-2 py-1 text-xs rounded-full ${
-                        invoice.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        invoice.status === 'paid' 
+                          ? 'bg-green-100 text-green-800' 
+                          : invoice.status === 'partial' 
+                            ? 'bg-yellow-100 text-yellow-800' 
+                            : 'bg-red-100 text-red-800'
                       }`}>
                         {invoice.status.toUpperCase()}
                       </span>

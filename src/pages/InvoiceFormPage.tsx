@@ -15,7 +15,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
 import { useApp } from '@/contexts/AppContext';
-import { Invoice, InvoiceItem, Party } from '@/lib/storage';
+import { Invoice, InvoiceItem } from '@/lib/storage';
 
 const defaultInvoiceItem: InvoiceItem = {
   id: '',
@@ -49,6 +49,7 @@ const InvoiceFormPage: React.FC = () => {
         gstAmount: 0,
         discount: 0,
         total: 0,
+        paidAmount: 0,
         status: 'unpaid' as const,
       };
   
@@ -97,6 +98,7 @@ const InvoiceFormPage: React.FC = () => {
     setInvoice(prev => ({
       ...prev,
       status: checked ? 'paid' : 'unpaid',
+      paidAmount: checked ? prev.total : 0,
     }));
   };
 
@@ -215,14 +217,20 @@ const InvoiceFormPage: React.FC = () => {
     e.preventDefault();
     
     if (validateForm()) {
+      // Update paidAmount based on status
+      const finalInvoice = {
+        ...invoice,
+        paidAmount: invoice.status === 'paid' ? invoice.total : 0
+      };
+      
       if (invoiceId) {
-        updateInvoice(invoice);
+        updateInvoice(finalInvoice);
         toast({
           title: 'Invoice Updated',
           description: `Invoice ${invoice.invoiceNumber} has been updated successfully.`,
         });
       } else {
-        const savedInvoice = addInvoice(invoice);
+        const savedInvoice = addInvoice(finalInvoice);
         toast({
           title: 'Invoice Created',
           description: `Invoice ${savedInvoice.invoiceNumber} has been created successfully.`,
@@ -438,6 +446,11 @@ const InvoiceFormPage: React.FC = () => {
                 Mark as Paid
               </Label>
             </div>
+            {invoice.id && invoice.status === 'partial' && (
+              <div className="mt-2 text-sm text-muted-foreground">
+                This invoice has partial payments. View the invoice to see payment details or record additional payments.
+              </div>
+            )}
           </div>
           
           <div className="space-y-4 border rounded-md p-4">
