@@ -5,6 +5,7 @@ import {
   Invoice,
   BusinessInfo,
   Product,
+  Transaction,
   getParties,
   saveParty,
   deleteParty,
@@ -17,13 +18,19 @@ import {
   getInvoiceById,
   getProducts,
   saveProduct as saveProductToStorage,
-  deleteProduct
+  deleteProduct,
+  getTransactions,
+  saveTransaction as saveTransactionToStorage,
+  deleteTransaction,
+  getTransactionsByPartyId,
+  getTransactionsByType
 } from '@/lib/storage';
 
 interface AppContextType {
   parties: Party[];
   invoices: Invoice[];
   products: Product[];
+  transactions: Transaction[];
   businessInfo: BusinessInfo;
   addParty: (party: Party) => void;
   updateParty: (party: Party) => void;
@@ -33,9 +40,12 @@ interface AppContextType {
   removeInvoice: (id: string) => void;
   saveProduct: (product: Product) => void;
   removeProduct: (id: string) => void;
+  saveTransaction: (transaction: Transaction) => void;
+  removeTransaction: (id: string) => void;
   updateBusinessInfo: (info: BusinessInfo) => void;
   getParty: (id: string) => Party | undefined;
   getInvoice: (id: string) => Invoice | undefined;
+  getTransactionsByParty: (partyId: string) => Transaction[];
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -44,6 +54,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [parties, setParties] = useState<Party[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(getBusinessInfo());
 
   // Load initial data
@@ -51,6 +62,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setParties(getParties());
     setInvoices(getInvoices());
     setProducts(getProducts());
+    setTransactions(getTransactions());
   }, []);
 
   const addParty = (party: Party) => {
@@ -94,6 +106,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setProducts(getProducts());
   };
 
+  const saveTransaction = (transaction: Transaction) => {
+    saveTransactionToStorage(transaction);
+    setTransactions(getTransactions());
+  };
+
+  const removeTransaction = (id: string) => {
+    deleteTransaction(id);
+    setTransactions(getTransactions());
+  };
+
   const updateBusinessInfo = (info: BusinessInfo) => {
     saveBusinessInfo(info);
     setBusinessInfo(info);
@@ -107,12 +129,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return getInvoiceById(id);
   };
 
+  const getTransactionsByParty = (partyId: string): Transaction[] => {
+    return getTransactionsByPartyId(partyId);
+  };
+
   return (
     <AppContext.Provider
       value={{
         parties,
         invoices,
         products,
+        transactions,
         businessInfo,
         addParty,
         updateParty,
@@ -122,9 +149,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         removeInvoice,
         saveProduct,
         removeProduct,
+        saveTransaction,
+        removeTransaction,
         updateBusinessInfo,
         getParty,
-        getInvoice
+        getInvoice,
+        getTransactionsByParty
       }}
     >
       {children}

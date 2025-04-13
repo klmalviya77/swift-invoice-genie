@@ -1,21 +1,55 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from '@/components/ui/table';
+import { Transaction, saveTransaction, getTransactionsByType } from '@/lib/storage';
+import { useApp } from '@/contexts/AppContext';
 
 const ReceiptPage = () => {
   const { toast } = useToast();
+  const { parties } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
-  const [receiptDate, setReceiptDate] = useState('');
+  const [receiptDate, setReceiptDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [receiptMode, setReceiptMode] = useState('cash');
-  const [receivedFrom, setReceivedFrom] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedPartyId, setSelectedPartyId] = useState('');
+  const [reference, setReference] = useState('');
+  const [receipts, setReceipts] = useState<Transaction[]>([]);
+  
+  // Load receipts on component mount
+  useEffect(() => {
+    const loadReceipts = () => {
+      const receiptTransactions = getTransactionsByType('receipt');
+      setReceipts(receiptTransactions.sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()));
+    };
+    
+    loadReceipts();
+    // Set up interval to refresh data every 5 seconds
+    const intervalId = setInterval(loadReceipts, 5000);
+    
+    return () => clearInterval(intervalId);
+  }, []);
   
   const handleNewReceipt = () => {
     setShowForm(true);
@@ -25,17 +59,18 @@ const ReceiptPage = () => {
     setShowForm(false);
     // Reset form fields
     setAmount('');
-    setReceiptDate('');
+    setReceiptDate(new Date().toISOString().slice(0, 10));
     setReceiptMode('cash');
-    setReceivedFrom('');
     setDescription('');
+    setSelectedPartyId('');
+    setReference('');
   };
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     // Basic validation
-    if (!amount || !receiptDate) {
+    if (!amount || !receiptDate || !selectedPartyId) {
       toast({
         title: "Error",
         description: "Please fill all required fields",
@@ -44,8 +79,25 @@ const ReceiptPage = () => {
       return;
     }
     
-    // Here you would typically save the receipt to a database
-    // For now, just show a success message
+    // Create and save transaction
+    const newReceipt: Transaction = {
+      id: crypto.randomUUID(),
+      type: 'receipt',
+      amount: parseFloat(amount),
+      date: receiptDate,
+      partyId: selectedPartyId,
+      mode: receiptMode as 'cash' | 'bank_transfer' | 'upi' | 'cheque',
+      description: description,
+      reference: reference,
+      createdAt: new Date().toISOString()
+    };
+    
+    saveTransaction(newReceipt);
+    
+    // Refresh receipt list
+    setReceipts(prev => [newReceipt, ...prev].sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()));
+    
     toast({
       title: "Success",
       description: "Receipt created successfully!",
@@ -53,6 +105,22 @@ const ReceiptPage = () => {
     
     // Close the form and reset fields
     handleCancel();
+  };
+
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  // Helper function to get party name from ID
+  const getPartyName = (partyId: string) => {
+    const party = parties.find(p => p.id === partyId);
+    return party ? party.name : 'Unknown Party';
   };
 
   return (
@@ -77,13 +145,29 @@ const ReceiptPage = () => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="receivedFrom">Received From</Label>
-                <Input 
-                  id="receivedFrom" 
-                  placeholder="Enter name" 
-                  value={receivedFrom}
-                  onChange={(e) => setReceivedFrom(e.target.value)}
-                />
+                <Label htmlFor="party">Received From*</Label>
+                <Select 
+                  value={selectedPartyId} 
+                  onValueChange={setSelectedPartyId}
+                  required
+                >
+                  <SelectTrigger id="party">
+                    <SelectValue placeholder="Select party" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parties.length === 0 ? (
+                      <SelectItem value="no-parties" disabled>
+                        No parties available
+                      </SelectItem>
+                    ) : (
+                      parties.map(party => (
+                        <SelectItem key={party.id} value={party.id}>
+                          {party.name} ({party.type})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               
               <div className="grid gap-2">
@@ -115,7 +199,7 @@ const ReceiptPage = () => {
                   value={receiptMode} 
                   onValueChange={setReceiptMode}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="mode">
                     <SelectValue placeholder="Select receipt mode" />
                   </SelectTrigger>
                   <SelectContent>
@@ -125,6 +209,16 @@ const ReceiptPage = () => {
                     <SelectItem value="cheque">Cheque</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              
+              <div className="grid gap-2">
+                <Label htmlFor="reference">Reference/Cheque No.</Label>
+                <Input 
+                  id="reference" 
+                  placeholder="Enter reference number" 
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                />
               </div>
               
               <div className="grid gap-2">
@@ -154,9 +248,36 @@ const ReceiptPage = () => {
             <CardTitle className="text-sm font-medium">Recent Receipts</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-8 text-muted-foreground">
-              No receipt transactions found
-            </div>
+            {receipts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No receipt transactions found
+              </div>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Party</TableHead>
+                      <TableHead>Mode</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {receipts.map((receipt) => (
+                      <TableRow key={receipt.id}>
+                        <TableCell>{formatDate(receipt.date)}</TableCell>
+                        <TableCell>{getPartyName(receipt.partyId)}</TableCell>
+                        <TableCell className="capitalize">{receipt.mode.replace('_', ' ')}</TableCell>
+                        <TableCell>{receipt.reference || '-'}</TableCell>
+                        <TableCell className="text-right font-medium">₹{receipt.amount.toLocaleString('en-IN')}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -48,6 +48,18 @@ export interface Invoice {
   paymentTerm?: string;
 }
 
+export interface Transaction {
+  id: string;
+  type: 'payment' | 'receipt';
+  amount: number;
+  date: string;
+  partyId: string;
+  mode: 'cash' | 'bank_transfer' | 'upi' | 'cheque';
+  description?: string;
+  reference?: string;
+  createdAt: string;
+}
+
 export interface BusinessInfo {
   name: string;
   address: string;
@@ -72,6 +84,7 @@ const PARTIES_KEY = 'bizswift_parties';
 const INVOICES_KEY = 'bizswift_invoices';
 const BUSINESS_INFO_KEY = 'bizswift_business_info';
 const PRODUCTS_KEY = 'bizswift_products';
+const TRANSACTIONS_KEY = 'bizswift_transactions';
 
 // Helper functions
 export const getParties = (): Party[] => {
@@ -270,4 +283,43 @@ export const generateQuickInvoice = (
   };
   
   return saveInvoice(invoice);
+};
+
+// Transactions functions
+export const getTransactions = (): Transaction[] => {
+  const transactionsJson = localStorage.getItem(TRANSACTIONS_KEY);
+  return transactionsJson ? JSON.parse(transactionsJson) : [];
+};
+
+export const saveTransaction = (transaction: Transaction): void => {
+  const transactions = getTransactions();
+  if (!transaction.id) {
+    transaction.id = crypto.randomUUID();
+  }
+  
+  if (!transaction.createdAt) {
+    transaction.createdAt = new Date().toISOString();
+  }
+  
+  const existingIndex = transactions.findIndex(t => t.id === transaction.id);
+  if (existingIndex >= 0) {
+    transactions[existingIndex] = transaction;
+  } else {
+    transactions.push(transaction);
+  }
+  
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+};
+
+export const deleteTransaction = (id: string): void => {
+  const transactions = getTransactions().filter(transaction => transaction.id !== id);
+  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+};
+
+export const getTransactionsByPartyId = (partyId: string): Transaction[] => {
+  return getTransactions().filter(transaction => transaction.partyId === partyId);
+};
+
+export const getTransactionsByType = (type: 'payment' | 'receipt'): Transaction[] => {
+  return getTransactions().filter(transaction => transaction.type === type);
 };
