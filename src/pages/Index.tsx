@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   UserPlus, 
@@ -15,7 +16,7 @@ import { useApp } from '@/contexts/AppContext';
 
 const Index = () => {
   const navigate = useNavigate();
-  const { parties, invoices } = useApp();
+  const { parties, invoices, transactions } = useApp();
   
   // Calculate totals
   const salesInvoices = invoices.filter(inv => 
@@ -30,6 +31,43 @@ const Index = () => {
   const outstandingAmount = salesInvoices
     .filter(inv => inv.status === 'unpaid')
     .reduce((sum, inv) => sum + inv.total, 0);
+
+  // Calculate percentage changes
+  const calculatePercentageChange = useMemo(() => {
+    // Outstanding percentage calculation
+    const previousOutstanding = invoices
+      .filter(inv => {
+        // Invoices from last month
+        const invoiceDate = new Date(inv.date);
+        const today = new Date();
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        return invoiceDate >= lastMonth && invoiceDate <= today && inv.status === 'unpaid';
+      })
+      .reduce((sum, inv) => sum + inv.total, 0);
+    
+    const outstandingChange = previousOutstanding > 0 
+      ? ((outstandingAmount - previousOutstanding) / previousOutstanding) * 100
+      : 0;
+    
+    // Parties percentage calculation
+    const recentTransactions = transactions
+      .filter(t => {
+        const transactionDate = new Date(t.date);
+        const today = new Date();
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        return transactionDate >= lastMonth;
+      });
+    
+    const activePartiesLastMonth = [...new Set(recentTransactions.map(t => t.partyId))].length;
+    const partiesChange = activePartiesLastMonth > 0 
+      ? ((parties.length - activePartiesLastMonth) / activePartiesLastMonth) * 100
+      : (parties.length > 0 ? 100 : 0);
+    
+    return {
+      outstandingChange: outstandingChange.toFixed(1),
+      partiesChange: partiesChange.toFixed(1)
+    };
+  }, [invoices, parties, transactions, outstandingAmount]);
 
   // For quick actions cards
   const quickActions = [
@@ -151,8 +189,14 @@ const Index = () => {
                 <p className="text-sm font-medium text-muted-foreground">Outstanding</p>
                 <div className="flex items-center">
                   <h3 className="text-2xl font-bold">₹{outstandingAmount.toLocaleString('en-IN')}</h3>
-                  <span className="ml-2 text-green-500 flex items-center">
-                    <span className="text-xs font-medium">7.8%</span>
+                  <span className="ml-2 flex items-center" 
+                    className={parseFloat(calculatePercentageChange.outstandingChange) > 0 
+                      ? "text-red-500" 
+                      : "text-green-500"}>
+                    <span className="text-xs font-medium">
+                      {parseFloat(calculatePercentageChange.outstandingChange) > 0 ? '+' : ''}
+                      {calculatePercentageChange.outstandingChange}%
+                    </span>
                   </span>
                 </div>
               </div>
@@ -171,7 +215,10 @@ const Index = () => {
                 <div className="flex items-center">
                   <h3 className="text-2xl font-bold">{parties.length}</h3>
                   <span className="ml-2 text-green-500 flex items-center">
-                    <span className="text-xs font-medium">3.1%</span>
+                    <span className="text-xs font-medium">
+                      {parseFloat(calculatePercentageChange.partiesChange) > 0 ? '+' : ''}
+                      {calculatePercentageChange.partiesChange}%
+                    </span>
                   </span>
                 </div>
               </div>

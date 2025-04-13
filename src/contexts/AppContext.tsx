@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
   Party,
@@ -46,6 +45,7 @@ interface AppContextType {
   getParty: (id: string) => Party | undefined;
   getInvoice: (id: string) => Invoice | undefined;
   getTransactionsByParty: (partyId: string) => Transaction[];
+  updateInvoiceStatusFromTransaction: (partyId: string, amount: number) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -109,6 +109,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const saveTransaction = (transaction: Transaction) => {
     saveTransactionToStorage(transaction);
     setTransactions(getTransactions());
+    
+    // Automatically update invoice status when a new transaction is created
+    updateInvoiceStatusFromTransaction(transaction.partyId, transaction.amount);
   };
 
   const removeTransaction = (id: string) => {
@@ -133,6 +136,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return getTransactionsByPartyId(partyId);
   };
 
+  // New function: Updates invoice status based on transactions
+  const updateInvoiceStatusFromTransaction = (partyId: string, amount: number) => {
+    // Get all unpaid invoices for this party
+    const partyInvoices = getInvoices().filter(
+      inv => inv.partyId === partyId && inv.status === 'unpaid'
+    ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    if (partyInvoices.length === 0) return;
+
+    let remainingAmount = amount;
+    const updatedInvoices = [];
+
+    // Try to mark invoices as paid, starting from the oldest
+    for (const invoice of partyInvoices) {
+      if (remainingAmount >= invoice.total) {
+        // Can pay this invoice completely
+        invoice.status = 'paid';
+        remainingAmount -= invoice.total;
+        updatedInvoices.push(invoice);
+      } else if (remainingAmount > 0) {
+        // Can only partially pay this invoice (we keep it as unpaid for now)
+        // Future enhancement: track partial payments
+        break;
+      } else {
+        break;
+      }
+    }
+
+    // Save the updated invoices
+    for (const invoice of updatedInvoices) {
+      saveInvoice(invoice);
+    }
+
+    // Refresh invoices in state if any were updated
+    if (updatedInvoices.length > 0) {
+      setInvoices(getInvoices());
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -154,7 +196,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateBusinessInfo,
         getParty,
         getInvoice,
-        getTransactionsByParty
+        getTransactionsByParty,
+        updateInvoiceStatusFromTransaction
       }}
     >
       {children}
