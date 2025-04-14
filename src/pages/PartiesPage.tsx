@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Plus, Edit, Trash, Search, FileText } from 'lucide-react';
+import { Plus, Edit, Trash, Search, FileText, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,7 +54,6 @@ const PartyForm: React.FC<{
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     
-    // Clear error when field is edited
     if (errors[name]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -227,6 +225,10 @@ const PartiesPage: React.FC = () => {
     navigate(`/invoices/new?partyId=${partyId}`);
   };
 
+  const viewPartyLedger = (partyId: string) => {
+    navigate(`/reports?tab=ledger&partyId=${partyId}`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -310,6 +312,14 @@ const PartiesPage: React.FC = () => {
                   <TableCell>{party.gst || '-'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => viewPartyLedger(party.id)}
+                        title="View Ledger"
+                      >
+                        <Wallet className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="outline"
                         size="icon"

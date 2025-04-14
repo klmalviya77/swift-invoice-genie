@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useApp } from '@/contexts/AppContext';
-import { Invoice } from '@/lib/storage';
+import { Invoice, Transaction } from '@/lib/storage';
 
 import SummaryCards from '@/components/reports/SummaryCards';
 import TransactionsFilter from '@/components/reports/TransactionsFilter';
@@ -13,14 +12,17 @@ import PartyLedgerContent from '@/components/reports/PartyLedgerContent';
 interface LedgerEntry {
   id: string;
   date: string;
-  invoiceNumber: string;
+  invoiceNumber?: string;
   type: 'customer' | 'supplier';
   amount: number;
-  status: 'paid' | 'unpaid' | 'partial';
+  status?: 'paid' | 'unpaid' | 'partial';
+  isTransaction?: boolean;
+  transactionType?: 'payment' | 'receipt';
+  description?: string;
 }
 
 const ReportsPage: React.FC = () => {
-  const { parties, invoices } = useApp();
+  const { parties, invoices, transactions } = useApp();
   const [selectedPartyId, setSelectedPartyId] = useState<string>('');
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
@@ -78,14 +80,14 @@ const ReportsPage: React.FC = () => {
     });
   };
 
-  // Get ledger for a specific party
+  // Get ledger for a specific party - now including transactions
   const getPartyLedger = (partyId: string): LedgerEntry[] => {
     const party = parties.find(p => p.id === partyId);
     if (!party) return [];
     
-    return invoices
+    // Get invoices for this party
+    const partyInvoices = invoices
       .filter(invoice => invoice.partyId === partyId)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map(invoice => ({
         id: invoice.id,
         date: invoice.date,
@@ -93,7 +95,25 @@ const ReportsPage: React.FC = () => {
         type: party.type,
         amount: invoice.total,
         status: invoice.status,
+        isTransaction: false
       }));
+    
+    // Get transactions for this party
+    const partyTransactions = transactions
+      .filter(transaction => transaction.partyId === partyId)
+      .map(transaction => ({
+        id: transaction.id,
+        date: transaction.date,
+        type: party.type,
+        amount: transaction.amount,
+        isTransaction: true,
+        transactionType: transaction.type,
+        description: transaction.description
+      }));
+    
+    // Combine and sort by date
+    return [...partyInvoices, ...partyTransactions]
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
   const filteredInvoices = filterInvoices();
@@ -115,20 +135,44 @@ const ReportsPage: React.FC = () => {
 
   // Calculate totals for a party's ledger
   const calculateLedgerTotals = () => {
-    const totalAmount = partyLedger.reduce((sum, entry) => sum + entry.amount, 0);
-    const paidAmount = partyLedger
+    // We need to handle transactions differently from invoices
+    
+    const invoiceEntries = partyLedger.filter(entry => !entry.isTransaction);
+    const transactionEntries = partyLedger.filter(entry => entry.isTransaction);
+    
+    const totalInvoiceAmount = invoiceEntries.reduce((sum, entry) => sum + entry.amount, 0);
+    
+    let paidAmount = invoiceEntries
       .filter(entry => entry.status === 'paid')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    const unpaidAmount = totalAmount - paidAmount;
+    
+    // Add receipts (if customer) or subtract payments (if supplier)
+    const party = parties.find(p => p.id === selectedPartyId);
+    if (party) {
+      if (party.type === 'customer') {
+        // For customers, receipts are payments received
+        paidAmount += transactionEntries
+          .filter(entry => entry.transactionType === 'receipt')
+          .reduce((sum, entry) => sum + entry.amount, 0);
+      } else {
+        // For suppliers, payments are amounts paid
+        paidAmount += transactionEntries
+          .filter(entry => entry.transactionType === 'payment')
+          .reduce((sum, entry) => sum + entry.amount, 0);
+      }
+    }
+    
+    const unpaidAmount = Math.max(0, totalInvoiceAmount - paidAmount);
     
     return {
-      totalAmount,
+      totalAmount: totalInvoiceAmount,
       paidAmount,
       unpaidAmount,
     };
   };
 
   const ledgerTotals = calculateLedgerTotals();
+  const selectedPartyName = selectedPartyId ? getPartyName(selectedPartyId) : '';
 
   return (
     <div className="space-y-6">
@@ -179,6 +223,7 @@ const ReportsPage: React.FC = () => {
             partyLedger={partyLedger}
             ledgerTotals={ledgerTotals}
             formatDate={formatDate}
+            partyName={selectedPartyName}
           />
         </TabsContent>
       </Tabs>
