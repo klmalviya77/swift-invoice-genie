@@ -31,7 +31,7 @@ interface LedgerEntry {
   invoiceNumber: string;
   type: 'customer' | 'supplier';
   amount: number;
-  status: 'paid' | 'unpaid';
+  status: 'paid' | 'unpaid' | 'partial';
 }
 
 const ReportsPage: React.FC = () => {
