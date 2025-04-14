@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -28,7 +27,6 @@ const Index: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState('overview');
 
   useEffect(() => {
-    // Calculate invoice statistics
     const totalInvoices = invoices.length;
     const pendingInvoices = invoices.filter(i => i.status === 'unpaid' || i.status === 'partial').length;
     const paidInvoices = invoices.filter(i => i.status === 'paid').length;
@@ -46,7 +44,6 @@ const Index: React.FC = () => {
       pendingPercentage: totalAmount > 0 ? Math.round((pendingAmount / totalAmount) * 100) : 0,
     });
 
-    // Calculate party statistics
     const totalParties = parties.length;
     const customers = parties.filter(p => p.type === 'customer').length;
     const suppliers = parties.filter(p => p.type === 'supplier').length;
@@ -58,13 +55,11 @@ const Index: React.FC = () => {
       customersPercentage: totalParties > 0 ? Math.round((customers / totalParties) * 100) : 0,
     });
 
-    // Prepare monthly sales data
     const last6Months = new Date();
     last6Months.setMonth(last6Months.getMonth() - 5);
     
     const monthlySales: Record<string, number> = {};
     
-    // Initialize the last 6 months
     for (let i = 0; i < 6; i++) {
       const date = new Date(last6Months);
       date.setMonth(date.getMonth() + i);
@@ -72,7 +67,6 @@ const Index: React.FC = () => {
       monthlySales[monthYear] = 0;
     }
     
-    // Calculate sales for each month
     invoices.forEach(invoice => {
       const invoiceDate = new Date(invoice.date);
       if (invoiceDate >= last6Months) {
@@ -83,7 +77,6 @@ const Index: React.FC = () => {
       }
     });
     
-    // Convert to array format for the chart
     const chartData = Object.entries(monthlySales).map(([name, value]) => ({
       name,
       amount: value,
@@ -92,7 +85,6 @@ const Index: React.FC = () => {
     setSalesData(chartData);
   }, [invoices, parties]);
 
-  // Calculate transaction statistics (last 30 days)
   const last30Days = new Date();
   last30Days.setDate(last30Days.getDate() - 30);
   
@@ -108,13 +100,11 @@ const Index: React.FC = () => {
     .filter(t => t.type === 'payment')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  // Prepare transaction data for pie chart
   const transactionPieData = [
     { name: 'Receipts', value: totalReceived },
     { name: 'Payments', value: totalPaid },
   ];
 
-  // Top customers data
   const topCustomers = [...parties]
     .filter(p => p.type === 'customer')
     .map(customer => {
@@ -176,9 +166,12 @@ const Index: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">₹{invoices
-                  .filter(i => (i.status === 'unpaid' || i.status === 'partial') && {
-                    const party = parties.find(p => p.id === i.partyId);
-                    return party && party.type === 'customer';
+                  .filter(i => {
+                    if (i.status === 'unpaid' || i.status === 'partial') {
+                      const party = parties.find(p => p.id === i.partyId);
+                      return party && party.type === 'customer';
+                    }
+                    return false;
                   })
                   .reduce((sum, i) => sum + (i.total - (i.paidAmount || 0)), 0)
                   .toLocaleString('en-IN')}
@@ -421,7 +414,6 @@ const Index: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
-            {/* More analytics cards can be added here */}
           </div>
         </TabsContent>
       </Tabs>
