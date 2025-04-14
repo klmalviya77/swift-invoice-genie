@@ -1,0 +1,15 @@
+
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"cross-env ELECTRON=true vite\" \"electron electron/main.ts\"",
+    "electron:build": "node scripts/build-electron.js",
+    "electron:package": "electron-builder build --config electron/electron-builder.json",
+    "electron:build:win": "electron-builder build --win --config electron/electron-builder.json",
+    "electron:build:mac": "electron-builder build --mac --config electron/electron-builder.json",
+    "electron:build:linux": "electron-builder build --linux --config electron/electron-builder.json"
+  }
+}
