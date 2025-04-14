@@ -1,29 +1,14 @@
 
 import React, { useState } from 'react';
-import { Calendar, Search, ChevronsRight, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
-import { Party, Invoice } from '@/lib/storage';
+import { Invoice } from '@/lib/storage';
+
+import SummaryCards from '@/components/reports/SummaryCards';
+import TransactionsFilter from '@/components/reports/TransactionsFilter';
+import TransactionsTable from '@/components/reports/TransactionsTable';
+import PartyLedgerFilter from '@/components/reports/PartyLedgerFilter';
+import PartyLedgerContent from '@/components/reports/PartyLedgerContent';
 
 interface LedgerEntry {
   id: string;
@@ -36,7 +21,6 @@ interface LedgerEntry {
 
 const ReportsPage: React.FC = () => {
   const { parties, invoices } = useApp();
-  const navigate = useNavigate();
   const [selectedPartyId, setSelectedPartyId] = useState<string>('');
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
@@ -153,35 +137,11 @@ const ReportsPage: React.FC = () => {
         <p className="text-muted-foreground">View financial reports and party ledgers</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{totalSales.toLocaleString('en-IN')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Purchases</CardTitle>
-            <TrendingDown className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{totalPurchases.toLocaleString('en-IN')}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Outstanding Balance</CardTitle>
-            <DollarSign className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{totalUnpaid.toLocaleString('en-IN')}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <SummaryCards 
+        totalSales={totalSales} 
+        totalPurchases={totalPurchases} 
+        totalUnpaid={totalUnpaid} 
+      />
 
       <Tabs defaultValue="transactions" className="space-y-4">
         <TabsList>
@@ -190,209 +150,36 @@ const ReportsPage: React.FC = () => {
         </TabsList>
         
         <TabsContent value="transactions" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="start-date">Start Date</Label>
-              <div className="mt-1">
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="end-date">End Date</Label>
-              <div className="mt-1">
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="report-type">Report Type</Label>
-              <Select value={reportType} onValueChange={(value: any) => setReportType(value)}>
-                <SelectTrigger id="report-type" className="mt-1">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Transactions</SelectItem>
-                  <SelectItem value="sales">Sales Only</SelectItem>
-                  <SelectItem value="purchases">Purchases Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <TransactionsFilter 
+            startDate={startDate}
+            endDate={endDate}
+            reportType={reportType}
+            onStartDateChange={setStartDate}
+            onEndDateChange={setEndDate}
+            onReportTypeChange={setReportType}
+          />
 
-          {filteredInvoices.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Calendar className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="mt-4 text-lg font-medium">No transactions found</h3>
-              <p className="text-muted-foreground mt-2">
-                Try adjusting your filter criteria or date range
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Party</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.map((invoice) => {
-                    const party = parties.find(p => p.id === invoice.partyId);
-                    return (
-                      <TableRow key={invoice.id}>
-                        <TableCell>{formatDate(invoice.date)}</TableCell>
-                        <TableCell>{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{getPartyName(invoice.partyId)}</TableCell>
-                        <TableCell className="capitalize">{party?.type || 'unknown'}</TableCell>
-                        <TableCell className="text-right">₹{invoice.total.toLocaleString('en-IN')}</TableCell>
-                        <TableCell className="capitalize">{invoice.status}</TableCell>
-                        <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => navigate(`/invoices/${invoice.id}`)}
-                          >
-                            <ChevronsRight className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <TransactionsTable 
+            invoices={filteredInvoices}
+            parties={parties}
+            formatDate={formatDate}
+            getPartyName={getPartyName}
+          />
         </TabsContent>
         
         <TabsContent value="ledger" className="space-y-4">
-          <div className="flex items-center">
-            <div className="relative flex-1 max-w-md">
-              <Label htmlFor="party-select">Select Party</Label>
-              <Select value={selectedPartyId} onValueChange={setSelectedPartyId}>
-                <SelectTrigger id="party-select" className="mt-1">
-                  <SelectValue placeholder="Select a party" />
-                </SelectTrigger>
-                <SelectContent>
-                  {parties.length === 0 ? (
-                    <SelectItem value="no-parties" disabled>
-                      No parties available
-                    </SelectItem>
-                  ) : (
-                    parties.map(party => (
-                      <SelectItem key={party.id} value={party.id}>
-                        {party.name} ({party.type})
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <PartyLedgerFilter 
+            parties={parties}
+            selectedPartyId={selectedPartyId}
+            onPartyChange={setSelectedPartyId}
+          />
 
-          {!selectedPartyId && (
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Search className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="mt-4 text-lg font-medium">No party selected</h3>
-              <p className="text-muted-foreground mt-2">
-                Select a party to view their ledger
-              </p>
-            </div>
-          )}
-
-          {selectedPartyId && partyLedger.length === 0 && (
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Calendar className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="mt-4 text-lg font-medium">No transactions found</h3>
-              <p className="text-muted-foreground mt-2">
-                This party has no transactions yet
-              </p>
-            </div>
-          )}
-
-          {selectedPartyId && partyLedger.length > 0 && (
-            <>
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">₹{ledgerTotals.totalAmount.toLocaleString('en-IN')}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Paid Amount</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-green-600">₹{ledgerTotals.paidAmount.toLocaleString('en-IN')}</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Outstanding Balance</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-red-600">₹{ledgerTotals.unpaidAmount.toLocaleString('en-IN')}</div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Invoice #</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {partyLedger.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell>{formatDate(entry.date)}</TableCell>
-                        <TableCell>{entry.invoiceNumber}</TableCell>
-                        <TableCell className="text-right">₹{entry.amount.toLocaleString('en-IN')}</TableCell>
-                        <TableCell className="capitalize">{entry.status}</TableCell>
-                        <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            onClick={() => navigate(`/invoices/${entry.id}`)}
-                          >
-                            <ChevronsRight className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
-          )}
+          <PartyLedgerContent 
+            selectedPartyId={selectedPartyId}
+            partyLedger={partyLedger}
+            ledgerTotals={ledgerTotals}
+            formatDate={formatDate}
+          />
         </TabsContent>
       </Tabs>
     </div>
