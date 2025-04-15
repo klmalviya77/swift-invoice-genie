@@ -26,7 +26,10 @@ import {
   getTransactionsByType,
   getTransactionsByInvoiceId,
   getInvoiceRemainingAmount,
-  updateInvoicePaymentStatus
+  updateInvoicePaymentStatus,
+  getLowStockProducts,
+  getOutOfStockProducts,
+  adjustProductStock
 } from '@/lib/storage';
 
 interface AppContextType {
@@ -53,6 +56,10 @@ interface AppContextType {
   getInvoiceRemainingBalance: (invoiceId: string) => number;
   updateInvoiceStatusFromTransaction: (partyId: string, amount: number, invoiceId?: string) => void;
   recordPartialPayment: (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => void;
+  // New inventory-related functions
+  adjustStock: (productId: string, quantity: number) => boolean;
+  getLowStock: () => Product[];
+  getOutOfStock: () => Product[];
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -90,6 +97,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addInvoice = (invoice: Invoice) => {
     saveInvoice(invoice);
     setInvoices(getInvoices());
+    // Make sure product stock is updated after invoicing
+    setProducts(getProducts());
     return invoice;
   };
 
@@ -256,6 +265,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // New inventory management functions
+  const adjustStock = (productId: string, quantity: number): boolean => {
+    const result = adjustProductStock(productId, quantity);
+    if (result) {
+      setProducts(getProducts());
+    }
+    return result;
+  };
+
+  const getLowStock = (): Product[] => {
+    return getLowStockProducts();
+  };
+
+  const getOutOfStock = (): Product[] => {
+    return getOutOfStockProducts();
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -281,7 +307,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         getTransactionsByInvoice,
         getInvoiceRemainingBalance,
         updateInvoiceStatusFromTransaction,
-        recordPartialPayment
+        recordPartialPayment,
+        // New inventory functions
+        adjustStock,
+        getLowStock,
+        getOutOfStock
       }}
     >
       {children}

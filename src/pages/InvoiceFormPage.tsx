@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Plus, Trash, ArrowLeft } from 'lucide-react';
+import { Plus, Trash, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,11 +15,13 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
 import { useApp } from '@/contexts/AppContext';
-import { Invoice, InvoiceItem } from '@/lib/storage';
+import { Invoice, InvoiceItem, hasEnoughStock } from '@/lib/storage';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const defaultInvoiceItem: InvoiceItem = {
   id: '',
   product: '',
+  productId: '', // Add productId field
   qty: 1,
   rate: 0,
   amount: 0,
@@ -30,7 +32,7 @@ const InvoiceFormPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { parties, getInvoice, addInvoice, updateInvoice } = useApp();
+  const { parties, products, getInvoice, addInvoice, updateInvoice } = useApp();
   
   // Check if this is a purchase invoice
   const invoiceType = searchParams.get('type') || 'sales';
@@ -55,6 +57,7 @@ const InvoiceFormPage: React.FC = () => {
   
   const [invoice, setInvoice] = useState<Invoice>(initialInvoice);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [stockWarnings, setStockWarnings] = useState<Record<string, string>>({});
 
   // Calculate totals whenever items, GST or discount changes
   useEffect(() => {
@@ -81,6 +84,25 @@ const InvoiceFormPage: React.FC = () => {
       }
     }
   }, [invoiceId, getInvoice, navigate]);
+
+  // Check stock levels for customer invoices (sales)
+  useEffect(() => {
+    if (isPurchaseInvoice || invoiceId) return; // Skip for purchase invoices or existing invoices
+    
+    const newWarnings: Record<string, string> = {};
+    
+    invoice.items.forEach((item, index) => {
+      if (item.productId) {
+        const product = products.find(p => p.id === item.productId);
+        if (product && item.qty > product.stock) {
+          newWarnings[`items[${index}]`] = 
+            `Warning: Requested quantity (${item.qty}) exceeds available stock (${product.stock} ${product.unit})`;
+        }
+      }
+    });
+    
+    setStockWarnings(newWarnings);
+  }, [invoice.items, products, isPurchaseInvoice, invoiceId]);
 
   const handlePartyChange = (partyId: string) => {
     setInvoice(prev => ({ ...prev, partyId }));
@@ -122,6 +144,40 @@ const InvoiceFormPage: React.FC = () => {
       setErrors(prev => {
         const newErrors = { ...prev };
         delete newErrors[name];
+        return newErrors;
+      });
+    }
+  };
+
+  const handleProductSelect = (index: number, productId: string) => {
+    const product = products.find(p => p.id === productId);
+    
+    if (product) {
+      setInvoice(prev => {
+        const updatedItems = [...prev.items];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          product: product.name,
+          productId: product.id,
+          rate: product.price,
+          amount: product.price * updatedItems[index].qty,
+          hsn: product.hsn
+        };
+        
+        return { ...prev, items: updatedItems };
+      });
+      
+      // Clear item-specific errors
+      const errorKeys = [
+        `items[${index}].product`,
+        `items[${index}].rate`
+      ];
+      
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        errorKeys.forEach(key => {
+          delete newErrors[key];
+        });
         return newErrors;
       });
     }
@@ -175,6 +231,25 @@ const InvoiceFormPage: React.FC = () => {
         ...prev,
         items: prev.items.filter((_, i) => i !== index),
       }));
+      
+      // Remove any errors/warnings for this item
+      const newErrors = { ...errors };
+      const newWarnings = { ...stockWarnings };
+      
+      Object.keys(newErrors).forEach(key => {
+        if (key.startsWith(`items[${index}]`)) {
+          delete newErrors[key];
+        }
+      });
+      
+      Object.keys(newWarnings).forEach(key => {
+        if (key.startsWith(`items[${index}]`)) {
+          delete newWarnings[key];
+        }
+      });
+      
+      setErrors(newErrors);
+      setStockWarnings(newWarnings);
     } else {
       toast({
         title: "Cannot Remove",
@@ -206,6 +281,13 @@ const InvoiceFormPage: React.FC = () => {
       
       if (item.rate <= 0) {
         newErrors[`items[${index}].rate`] = 'Rate must be greater than 0';
+      }
+      
+      // Check stock for customer invoices (if new invoice)
+      if (!isPurchaseInvoice && !invoiceId && item.productId) {
+        if (!hasEnoughStock(item.productId, item.qty)) {
+          newErrors[`items[${index}].qty`] = `Not enough stock available. Please reduce quantity.`;
+        }
       }
     });
     
@@ -265,6 +347,28 @@ const InvoiceFormPage: React.FC = () => {
     ));
   };
 
+  // Get available products with stock information
+  const getProductOptions = (index: number) => {
+    return products.map(product => {
+      const isOutOfStock = !isPurchaseInvoice && product.stock <= 0;
+      const isCurrentProduct = invoice.items[index].productId === product.id;
+      
+      // Only disable out of stock products for customer invoices and if not already selected
+      const disabled = isOutOfStock && !isCurrentProduct && !isPurchaseInvoice;
+      
+      return (
+        <option 
+          key={product.id} 
+          value={product.id}
+          disabled={disabled}
+        >
+          {product.name} {!isPurchaseInvoice ? `(${product.stock} ${product.unit} available)` : ''} - ₹{product.price}
+          {isOutOfStock && !isPurchaseInvoice ? ' - Out of stock' : ''}
+        </option>
+      );
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -290,6 +394,16 @@ const InvoiceFormPage: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {Object.keys(stockWarnings).length > 0 && !isPurchaseInvoice && !invoiceId && (
+        <Alert variant="warning" className="bg-yellow-50 border-yellow-200">
+          <AlertCircle className="h-4 w-4 text-yellow-800" />
+          <AlertTitle className="text-yellow-800">Low Stock Warning</AlertTitle>
+          <AlertDescription className="text-yellow-800">
+            Some items have insufficient stock. You can still create the invoice, but stock levels will be negative.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -369,15 +483,19 @@ const InvoiceFormPage: React.FC = () => {
                 {invoice.items.map((item, index) => (
                   <tr key={item.id} className="border-t">
                     <td className="p-2 pl-4">
-                      <Input
-                        placeholder="Product name"
-                        name="product"
-                        value={item.product}
-                        onChange={(e) => handleItemChange(index, e)}
-                        className={errors[`items[${index}].product`] ? 'border-destructive' : ''}
-                      />
+                      <select
+                        className={`flex h-10 w-full rounded-md border ${errors[`items[${index}].product`] ? 'border-destructive' : 'border-input'} bg-background px-3 py-2 text-sm ring-offset-background`}
+                        value={item.productId || ''}
+                        onChange={(e) => handleProductSelect(index, e.target.value)}
+                      >
+                        <option value="">Select a product</option>
+                        {getProductOptions(index)}
+                      </select>
                       {errors[`items[${index}].product`] && 
                         <p className="text-xs text-destructive mt-1">{errors[`items[${index}].product`]}</p>
+                      }
+                      {stockWarnings[`items[${index}]`] && 
+                        <p className="text-xs text-yellow-600 mt-1">{stockWarnings[`items[${index}]`]}</p>
                       }
                     </td>
                     <td className="p-2">

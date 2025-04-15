@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -9,7 +10,9 @@ import {
   ArrowDown,
   ArrowUp,
   Tag,
-  FileText
+  FileText,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,7 +45,15 @@ import {
   SheetFooter, 
   SheetClose 
 } from '@/components/ui/sheet';
-import { Product, generateQuickInvoice } from '@/lib/storage';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from '@/components/ui/badge';
+import { 
+  Product, 
+  generateQuickInvoice, 
+  getLowStockProducts,
+  getOutOfStockProducts,
+  getStockMovementHistory
+} from '@/lib/storage';
 
 const ProductsPage: React.FC = () => {
   const { products, parties, saveProduct, removeProduct } = useApp();
@@ -50,6 +61,8 @@ const ProductsPage: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [activeTab, setActiveTab] = useState<string>("all");
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -60,7 +73,9 @@ const ProductsPage: React.FC = () => {
     description: '',
     price: 0,
     stock: 0,
-    unit: 'pcs'
+    unit: 'pcs',
+    lowStockAlert: 5,
+    costPrice: 0
   });
 
   // Quick invoice form state
@@ -71,6 +86,14 @@ const ProductsPage: React.FC = () => {
     discount: 0,
     gstPercentage: 18,
     status: 'unpaid' as 'paid' | 'unpaid'
+  });
+
+  // Stock adjustment form state
+  const [stockAdjustment, setStockAdjustment] = useState({
+    productId: '',
+    quantity: 0,
+    reason: '',
+    adjustmentType: 'increase' as 'increase' | 'decrease'
   });
 
   const toggleSort = (field: string) => {
@@ -87,13 +110,32 @@ const ProductsPage: React.FC = () => {
     return sortDirection === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
-  const filteredProducts = products.filter((product) => {
-    return (
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.price.toString().includes(searchTerm)
-    );
-  });
+  // Filter products based on tab and search term
+  const getFilteredProducts = () => {
+    let filtered = [...products];
+    
+    // Apply tab filter
+    if (activeTab === "low-stock") {
+      filtered = getLowStockProducts();
+    } else if (activeTab === "out-of-stock") {
+      filtered = getOutOfStockProducts();
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter((product) => {
+        return (
+          product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.price.toString().includes(searchTerm)
+        );
+      });
+    }
+    
+    return filtered;
+  };
+
+  const filteredProducts = getFilteredProducts();
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {
     let compareA, compareB;
@@ -131,7 +173,9 @@ const ProductsPage: React.FC = () => {
       description: '',
       price: 0,
       stock: 0,
-      unit: 'pcs'
+      unit: 'pcs',
+      lowStockAlert: 5,
+      costPrice: 0
     });
     toast({
       title: 'Product Saved',
@@ -170,11 +214,73 @@ const ProductsPage: React.FC = () => {
     }
   };
 
+  const handleStockAdjustment = () => {
+    if (!stockAdjustment.productId) {
+      toast({
+        title: 'Error',
+        description: 'Please select a product',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const product = products.find(p => p.id === stockAdjustment.productId);
+    if (!product) {
+      toast({
+        title: 'Error',
+        description: 'Product not found',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const adjustmentValue = stockAdjustment.adjustmentType === 'increase' 
+      ? stockAdjustment.quantity 
+      : -stockAdjustment.quantity;
+
+    const updatedProduct = {
+      ...product,
+      stock: product.stock + adjustmentValue
+    };
+
+    saveProduct(updatedProduct);
+    
+    toast({
+      title: 'Stock Updated',
+      description: `${product.name} stock has been ${stockAdjustment.adjustmentType}d by ${stockAdjustment.quantity} ${product.unit}.`,
+    });
+
+    // Reset form
+    setStockAdjustment({
+      productId: '',
+      quantity: 0,
+      reason: '',
+      adjustmentType: 'increase'
+    });
+  };
+
+  // Get stock status badge
+  const getStockStatusBadge = (product: Product) => {
+    const threshold = product.lowStockAlert || 5;
+    
+    if (product.stock <= 0) {
+      return <Badge variant="destructive">Out of Stock</Badge>;
+    } else if (product.stock <= threshold) {
+      return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">Low Stock</Badge>;
+    }
+    return <Badge variant="outline" className="bg-green-100 text-green-800">In Stock</Badge>;
+  };
+
+  // Get product stock movement history
+  const getProductHistory = (productId: string) => {
+    return getStockMovementHistory(productId);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Products</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Products & Inventory</h1>
           <p className="text-muted-foreground">Manage your product inventory</p>
         </div>
         <div className="flex gap-2">
@@ -209,7 +315,7 @@ const ProductsPage: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="price">Price</Label>
+                    <Label htmlFor="price">Selling Price</Label>
                     <Input 
                       id="price" 
                       type="number"
@@ -219,13 +325,35 @@ const ProductsPage: React.FC = () => {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="stock">Stock</Label>
+                    <Label htmlFor="costPrice">Cost Price</Label>
+                    <Input 
+                      id="costPrice" 
+                      type="number"
+                      min="0"
+                      value={formProduct.costPrice || 0}
+                      onChange={(e) => setFormProduct({...formProduct, costPrice: parseFloat(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="stock">Current Stock</Label>
                     <Input 
                       id="stock" 
                       type="number"
                       min="0"
                       value={formProduct.stock}
                       onChange={(e) => setFormProduct({...formProduct, stock: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="lowStockAlert">Low Stock Alert</Label>
+                    <Input 
+                      id="lowStockAlert" 
+                      type="number"
+                      min="0"
+                      value={formProduct.lowStockAlert || 5}
+                      onChange={(e) => setFormProduct({...formProduct, lowStockAlert: parseInt(e.target.value) || 0})}
                     />
                   </div>
                 </div>
@@ -236,6 +364,15 @@ const ProductsPage: React.FC = () => {
                     value={formProduct.unit}
                     onChange={(e) => setFormProduct({...formProduct, unit: e.target.value})}
                     placeholder="pcs, kg, ltr, etc."
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="hsn">HSN Code</Label>
+                  <Input 
+                    id="hsn" 
+                    value={formProduct.hsn || ''}
+                    onChange={(e) => setFormProduct({...formProduct, hsn: e.target.value})}
+                    placeholder="HSN code"
                   />
                 </div>
               </div>
@@ -288,7 +425,9 @@ const ProductsPage: React.FC = () => {
                   >
                     <option value="">Select a product</option>
                     {products.map(product => (
-                      <option key={product.id} value={product.id}>{product.name} - ₹{product.price}</option>
+                      <option key={product.id} value={product.id} disabled={product.stock <= 0}>
+                        {product.name} - ₹{product.price} {product.stock <= 0 ? '(Out of Stock)' : `(${product.stock} ${product.unit} available)`}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -355,10 +494,87 @@ const ProductsPage: React.FC = () => {
               </SheetFooter>
             </SheetContent>
           </Sheet>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="secondary">
+                <Package className="mr-2 h-4 w-4" /> Adjust Stock
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="sm:max-w-md">
+              <SheetHeader>
+                <SheetTitle>Adjust Stock</SheetTitle>
+              </SheetHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="stockProduct">Select Product</Label>
+                  <select 
+                    id="stockProduct"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    value={stockAdjustment.productId}
+                    onChange={(e) => setStockAdjustment({...stockAdjustment, productId: e.target.value})}
+                  >
+                    <option value="">Select a product</option>
+                    {products.map(product => (
+                      <option key={product.id} value={product.id}>
+                        {product.name} (Current Stock: {product.stock} {product.unit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="adjustmentType">Adjustment Type</Label>
+                    <select 
+                      id="adjustmentType"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                      value={stockAdjustment.adjustmentType}
+                      onChange={(e) => setStockAdjustment({...stockAdjustment, adjustmentType: e.target.value as 'increase' | 'decrease'})}
+                    >
+                      <option value="increase">Increase</option>
+                      <option value="decrease">Decrease</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="adjustQuantity">Quantity</Label>
+                    <Input 
+                      id="adjustQuantity" 
+                      type="number"
+                      min="1"
+                      value={stockAdjustment.quantity}
+                      onChange={(e) => setStockAdjustment({...stockAdjustment, quantity: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="reason">Reason for Adjustment</Label>
+                  <Input 
+                    id="reason" 
+                    value={stockAdjustment.reason}
+                    onChange={(e) => setStockAdjustment({...stockAdjustment, reason: e.target.value})}
+                    placeholder="Enter reason for adjustment"
+                  />
+                </div>
+              </div>
+              <SheetFooter>
+                <SheetClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </SheetClose>
+                <SheetClose asChild>
+                  <Button 
+                    onClick={handleStockAdjustment}
+                    disabled={!stockAdjustment.productId || stockAdjustment.quantity <= 0}
+                  >
+                    Apply Stock Adjustment
+                  </Button>
+                </SheetClose>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
 
-      <div className="flex items-center">
+      <div className="flex flex-col md:flex-row justify-between gap-4">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
@@ -369,6 +585,33 @@ const ProductsPage: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        
+        <Tabs 
+          defaultValue="all" 
+          value={activeTab} 
+          onValueChange={setActiveTab}
+          className="w-full md:w-auto"
+        >
+          <TabsList className="grid grid-cols-3 w-full">
+            <TabsTrigger value="all">All Products</TabsTrigger>
+            <TabsTrigger value="low-stock">
+              Low Stock 
+              {getLowStockProducts().length > 0 && (
+                <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800">
+                  {getLowStockProducts().length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="out-of-stock">
+              Out of Stock
+              {getOutOfStockProducts().length > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                  {getOutOfStockProducts().length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       {sortedProducts.length === 0 ? (
@@ -380,7 +623,9 @@ const ProductsPage: React.FC = () => {
           <p className="text-muted-foreground mt-2">
             {searchTerm
               ? 'Try adjusting your search terms'
-              : 'Get started by adding your first product'}
+              : activeTab !== 'all'
+                ? `No products with ${activeTab === 'low-stock' ? 'low stock' : 'out of stock'} status`
+                : 'Get started by adding your first product'}
           </p>
           <Sheet>
             <SheetTrigger asChild>
@@ -488,6 +733,7 @@ const ProductsPage: React.FC = () => {
                     {getSortIcon('stock')}
                   </div>
                 </TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -497,9 +743,57 @@ const ProductsPage: React.FC = () => {
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>{product.description}</TableCell>
                   <TableCell className="text-right">₹{product.price.toLocaleString('en-IN')}</TableCell>
-                  <TableCell className="text-right">{product.stock?.toLocaleString('en-IN') || 0} {product.unit}</TableCell>
+                  <TableCell className="text-right">{product.stock.toLocaleString('en-IN')} {product.unit}</TableCell>
+                  <TableCell>{getStockStatusBadge(product)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setSelectedProductId(product.id)}
+                          >
+                            <Info className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Stock History: {product.name}</DialogTitle>
+                          </DialogHeader>
+                          <div className="mt-4 max-h-80 overflow-auto">
+                            {selectedProductId && getProductHistory(selectedProductId).length > 0 ? (
+                              <div className="space-y-4">
+                                <div className="grid grid-cols-4 font-semibold text-sm border-b pb-2">
+                                  <div>Date</div>
+                                  <div>Invoice</div>
+                                  <div className="text-right">Change</div>
+                                  <div className="text-right">Type</div>
+                                </div>
+                                {getProductHistory(selectedProductId).map((entry, index) => (
+                                  <div key={index} className="grid grid-cols-4 text-sm">
+                                    <div>{new Date(entry.date).toLocaleDateString()}</div>
+                                    <div>{entry.invoiceNumber}</div>
+                                    <div className={`text-right ${entry.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {entry.change > 0 ? '+' : ''}{entry.change} {product.unit}
+                                    </div>
+                                    <div className="text-right">
+                                      {entry.change > 0 ? 'Purchase' : 'Sale'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-center text-muted-foreground py-8">No stock movement history found.</p>
+                            )}
+                          </div>
+                          <DialogFooter>
+                            <DialogClose asChild>
+                              <Button>Close</Button>
+                            </DialogClose>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
                       <Button
                         variant="outline"
                         size="icon"

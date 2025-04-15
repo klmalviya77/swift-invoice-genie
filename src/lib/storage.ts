@@ -14,14 +14,17 @@ export interface Product {
   name: string;
   description: string;
   price: number;
-  stock?: number;
+  stock: number;
   unit?: string;
   hsn?: string;
+  lowStockAlert?: number;
+  costPrice?: number;
 }
 
 export interface InvoiceItem {
   id: string;
   product: string;
+  productId: string;
   qty: number;
   rate: number;
   amount: number;
@@ -131,6 +134,10 @@ export const saveProduct = (product: Product): void => {
     product.id = crypto.randomUUID();
   }
   
+  if (product.stock === undefined) {
+    product.stock = 0;
+  }
+  
   const existingIndex = products.findIndex(p => p.id === product.id);
   if (existingIndex >= 0) {
     products[existingIndex] = product;
@@ -150,11 +157,25 @@ export const getProductById = (id: string): Product | undefined => {
   return getProducts().find(product => product.id === id);
 };
 
+export const adjustProductStock = (productId: string, quantity: number): boolean => {
+  const product = getProductById(productId);
+  if (!product) return false;
+  
+  product.stock += quantity;
+  saveProduct(product);
+  return true;
+};
+
+export const hasEnoughStock = (productId: string, requestedQty: number): boolean => {
+  const product = getProductById(productId);
+  if (!product) return false;
+  return product.stock >= requestedQty;
+};
+
 export const getInvoices = (): Invoice[] => {
   const invoicesJson = localStorage.getItem(INVOICES_KEY);
   const invoices = invoicesJson ? JSON.parse(invoicesJson) : [];
   
-  // Ensure all invoices have paidAmount property (for backward compatibility)
   return invoices.map((invoice: Invoice) => {
     if (invoice.paidAmount === undefined) {
       invoice.paidAmount = invoice.status === 'paid' ? invoice.total : 0;
@@ -163,14 +184,12 @@ export const getInvoices = (): Invoice[] => {
   });
 };
 
-// Improved invoice number generation
 export const generateInvoiceNumber = (): string => {
   const invoices = getInvoices();
   const date = new Date();
   const year = date.getFullYear().toString().substring(2);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   
-  // Find the highest invoice number for the current month
   const monthPrefix = `INV-${year}${month}-`;
   const monthInvoices = invoices.filter(inv => inv.invoiceNumber.startsWith(monthPrefix));
   
@@ -189,27 +208,44 @@ export const generateInvoiceNumber = (): string => {
 
 export const saveInvoice = (invoice: Invoice): Invoice => {
   const invoices = getInvoices();
+  const isNewInvoice = !invoice.id || !invoices.some(i => i.id === invoice.id);
+  
   if (!invoice.id) {
     invoice.id = crypto.randomUUID();
   }
   
-  // Generate invoice number if not present
   if (!invoice.invoiceNumber) {
     invoice.invoiceNumber = generateInvoiceNumber();
   }
   
-  // Ensure paidAmount exists
   if (invoice.paidAmount === undefined) {
     invoice.paidAmount = invoice.status === 'paid' ? invoice.total : 0;
   }
   
-  // Set status based on payment status
   if (invoice.paidAmount >= invoice.total) {
     invoice.status = 'paid';
   } else if (invoice.paidAmount > 0) {
     invoice.status = 'partial';
   } else {
     invoice.status = 'unpaid';
+  }
+  
+  if (isNewInvoice) {
+    const party = getPartyById(invoice.partyId);
+    
+    if (party?.type === 'customer') {
+      invoice.items.forEach(item => {
+        if (item.productId) {
+          adjustProductStock(item.productId, -item.qty);
+        }
+      });
+    } else if (party?.type === 'supplier') {
+      invoice.items.forEach(item => {
+        if (item.productId) {
+          adjustProductStock(item.productId, item.qty);
+        }
+      });
+    }
   }
   
   const existingIndex = invoices.findIndex(i => i.id === invoice.id);
@@ -245,7 +281,6 @@ export const saveBusinessInfo = (info: BusinessInfo): void => {
   localStorage.setItem(BUSINESS_INFO_KEY, JSON.stringify(info));
 };
 
-// Filter invoices by date range
 export const getInvoicesByDateRange = (startDate: string, endDate: string): Invoice[] => {
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -257,7 +292,6 @@ export const getInvoicesByDateRange = (startDate: string, endDate: string): Invo
   });
 };
 
-// Generate a quick invoice for a single product
 export const generateQuickInvoice = (
   partyId: string, 
   productId: string, 
@@ -272,6 +306,15 @@ export const generateQuickInvoice = (
     throw new Error('Product not found');
   }
   
+  const party = getPartyById(partyId);
+  if (!party) {
+    throw new Error('Party not found');
+  }
+  
+  if (party.type === 'customer' && !hasEnoughStock(productId, quantity)) {
+    throw new Error(`Not enough stock available for ${product.name}. Current stock: ${product.stock}`);
+  }
+  
   const amount = product.price * quantity;
   const subtotal = amount;
   const gstAmount = (subtotal * gstPercentage) / 100;
@@ -280,6 +323,7 @@ export const generateQuickInvoice = (
   const invoiceItem: InvoiceItem = {
     id: crypto.randomUUID(),
     product: product.name,
+    productId: product.id,
     qty: quantity,
     rate: product.price,
     amount: amount,
@@ -310,7 +354,43 @@ export const generateQuickInvoice = (
   return saveInvoice(invoice);
 };
 
-// Transactions functions
+export const getLowStockProducts = (): Product[] => {
+  return getProducts().filter(product => {
+    const threshold = product.lowStockAlert || 5;
+    return product.stock <= threshold;
+  });
+};
+
+export const getOutOfStockProducts = (): Product[] => {
+  return getProducts().filter(product => product.stock <= 0);
+};
+
+export const getStockMovementHistory = (productId: string): { date: string, change: number, invoiceId: string, invoiceNumber: string }[] => {
+  const history: { date: string, change: number, invoiceId: string, invoiceNumber: string }[] = [];
+  
+  const invoices = getInvoices();
+  
+  for (const invoice of invoices) {
+    const party = getPartyById(invoice.partyId);
+    if (!party) continue;
+    
+    const isCustomer = party.type === 'customer';
+    
+    for (const item of invoice.items) {
+      if (item.productId === productId) {
+        history.push({
+          date: invoice.date,
+          change: isCustomer ? -item.qty : item.qty,
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber
+        });
+      }
+    }
+  }
+  
+  return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+
 export const getTransactions = (): Transaction[] => {
   const transactionsJson = localStorage.getItem(TRANSACTIONS_KEY);
   return transactionsJson ? JSON.parse(transactionsJson) : [];
@@ -349,12 +429,10 @@ export const getTransactionsByType = (type: 'payment' | 'receipt'): Transaction[
   return getTransactions().filter(transaction => transaction.type === type);
 };
 
-// New function to get transactions by invoice ID
 export const getTransactionsByInvoiceId = (invoiceId: string): Transaction[] => {
   return getTransactions().filter(transaction => transaction.invoiceId === invoiceId);
 };
 
-// New function to calculate remaining amount for an invoice
 export const getInvoiceRemainingAmount = (invoiceId: string): number => {
   const invoice = getInvoiceById(invoiceId);
   if (!invoice) return 0;
@@ -362,19 +440,15 @@ export const getInvoiceRemainingAmount = (invoiceId: string): number => {
   return Math.max(0, invoice.total - invoice.paidAmount);
 };
 
-// New function to update invoice payment status after a transaction
 export const updateInvoicePaymentStatus = (invoice: Invoice): Invoice => {
-  // Calculate the sum of all transactions for this invoice
   const transactions = getTransactionsByInvoiceId(invoice.id);
   const paidAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
   
-  // Update the invoice
   const updatedInvoice = {
     ...invoice,
     paidAmount: paidAmount
   };
   
-  // Set status based on payment status
   if (paidAmount >= invoice.total) {
     updatedInvoice.status = 'paid';
   } else if (paidAmount > 0) {
