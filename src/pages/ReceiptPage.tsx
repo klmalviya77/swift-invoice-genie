@@ -71,7 +71,7 @@ const ReceiptPage = () => {
     // Create and save transaction
     const newReceipt = {
       id: crypto.randomUUID(),
-      type: 'receipt',
+      type: 'receipt' as const, // Type assertion to ensure it's the correct literal type
       amount: parseFloat(amount),
       date: receiptDate,
       partyId: selectedPartyId,

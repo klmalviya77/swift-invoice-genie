@@ -71,7 +71,7 @@ const PaymentPage = () => {
     // Create and save transaction
     const newPayment = {
       id: crypto.randomUUID(),
-      type: 'payment',
+      type: 'payment' as const, // Type assertion to ensure it's the correct literal type
       amount: parseFloat(amount),
       date: paymentDate,
       partyId: selectedPartyId,
