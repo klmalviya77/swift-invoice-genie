@@ -19,6 +19,7 @@ import SettingsPage from "@/pages/SettingsPage";
 import TransactionsPage from "@/pages/TransactionsPage";
 import PaymentPage from "@/pages/PaymentPage";
 import ReceiptPage from "@/pages/ReceiptPage";
+import InventoryPage from "@/pages/InventoryPage";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
               <Route index element={<Index />} />
               <Route path="parties" element={<PartiesPage />} />
               <Route path="products" element={<ProductsPage />} />
+              <Route path="inventory" element={<InventoryPage />} />
               <Route path="invoices" element={<InvoicesPage />} />
               <Route path="purchase-invoices" element={<PurchaseInvoicesPage />} />
               <Route path="invoices/new" element={<InvoiceFormPage />} />
