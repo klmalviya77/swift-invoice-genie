@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, X } from 'lucide-react';
@@ -21,12 +21,12 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
-import { Transaction, saveTransaction, getTransactionsByType } from '@/lib/storage';
 import { useApp } from '@/contexts/AppContext';
 
 const ReceiptPage = () => {
   const { toast } = useToast();
-  const { parties } = useApp();
+  const { parties, transactions, saveTransaction } = useApp();
+  
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
   const [receiptDate, setReceiptDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -34,22 +34,11 @@ const ReceiptPage = () => {
   const [description, setDescription] = useState('');
   const [selectedPartyId, setSelectedPartyId] = useState('');
   const [reference, setReference] = useState('');
-  const [receipts, setReceipts] = useState<Transaction[]>([]);
   
-  // Load receipts on component mount
-  useEffect(() => {
-    const loadReceipts = () => {
-      const receiptTransactions = getTransactionsByType('receipt');
-      setReceipts(receiptTransactions.sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()));
-    };
-    
-    loadReceipts();
-    // Set up interval to refresh data every 5 seconds
-    const intervalId = setInterval(loadReceipts, 5000);
-    
-    return () => clearInterval(intervalId);
-  }, []);
+  // Filter receipts from context transactions
+  const receipts = transactions
+    .filter(t => t.type === 'receipt')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   const handleNewReceipt = () => {
     setShowForm(true);
@@ -80,7 +69,7 @@ const ReceiptPage = () => {
     }
     
     // Create and save transaction
-    const newReceipt: Transaction = {
+    const newReceipt = {
       id: crypto.randomUUID(),
       type: 'receipt',
       amount: parseFloat(amount),
@@ -92,11 +81,8 @@ const ReceiptPage = () => {
       createdAt: new Date().toISOString()
     };
     
+    // Use the context function to save the transaction
     saveTransaction(newReceipt);
-    
-    // Refresh receipt list
-    setReceipts(prev => [newReceipt, ...prev].sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()));
     
     toast({
       title: "Success",
@@ -122,6 +108,9 @@ const ReceiptPage = () => {
     const party = parties.find(p => p.id === partyId);
     return party ? party.name : 'Unknown Party';
   };
+
+  // Filter parties to show only customers for receipts
+  const customerParties = parties.filter(p => p.type === 'customer');
 
   return (
     <div className="space-y-4">
@@ -152,17 +141,17 @@ const ReceiptPage = () => {
                   required
                 >
                   <SelectTrigger id="party">
-                    <SelectValue placeholder="Select party" />
+                    <SelectValue placeholder="Select customer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {parties.length === 0 ? (
+                    {customerParties.length === 0 ? (
                       <SelectItem value="no-parties" disabled>
-                        No parties available
+                        No customers available
                       </SelectItem>
                     ) : (
-                      parties.map(party => (
+                      customerParties.map(party => (
                         <SelectItem key={party.id} value={party.id}>
-                          {party.name} ({party.type})
+                          {party.name}
                         </SelectItem>
                       ))
                     )}
@@ -194,13 +183,13 @@ const ReceiptPage = () => {
               </div>
               
               <div className="grid gap-2">
-                <Label htmlFor="mode">Receipt Mode</Label>
+                <Label htmlFor="mode">Payment Mode</Label>
                 <Select 
                   value={receiptMode} 
                   onValueChange={setReceiptMode}
                 >
                   <SelectTrigger id="mode">
-                    <SelectValue placeholder="Select receipt mode" />
+                    <SelectValue placeholder="Select payment mode" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Cash</SelectItem>

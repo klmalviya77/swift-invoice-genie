@@ -21,12 +21,11 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
-import { Transaction, Party, saveTransaction, getTransactionsByType } from '@/lib/storage';
 import { useApp } from '@/contexts/AppContext';
 
 const PaymentPage = () => {
   const { toast } = useToast();
-  const { parties } = useApp();
+  const { parties, transactions, saveTransaction } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -34,22 +33,12 @@ const PaymentPage = () => {
   const [description, setDescription] = useState('');
   const [selectedPartyId, setSelectedPartyId] = useState('');
   const [reference, setReference] = useState('');
-  const [payments, setPayments] = useState<Transaction[]>([]);
   
-  // Load payments on component mount
-  useEffect(() => {
-    const loadPayments = () => {
-      const paymentTransactions = getTransactionsByType('payment');
-      setPayments(paymentTransactions.sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()));
-    };
-    
-    loadPayments();
-    // Set up interval to refresh data every 5 seconds
-    const intervalId = setInterval(loadPayments, 5000);
-    
-    return () => clearInterval(intervalId);
-  }, []);
+  // We're now using transactions directly from the App context instead of local state
+  // This ensures real-time updates across all components
+  const payments = transactions
+    .filter(t => t.type === 'payment')
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   const handleNewPayment = () => {
     setShowForm(true);
@@ -80,7 +69,7 @@ const PaymentPage = () => {
     }
     
     // Create and save transaction
-    const newPayment: Transaction = {
+    const newPayment = {
       id: crypto.randomUUID(),
       type: 'payment',
       amount: parseFloat(amount),
@@ -92,11 +81,8 @@ const PaymentPage = () => {
       createdAt: new Date().toISOString()
     };
     
+    // Use the context function to save the transaction and update state everywhere
     saveTransaction(newPayment);
-    
-    // Refresh payment list
-    setPayments(prev => [newPayment, ...prev].sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()));
     
     toast({
       title: "Success",

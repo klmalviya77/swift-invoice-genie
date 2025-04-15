@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useApp } from '@/contexts/AppContext';
 import { Invoice, Transaction } from '@/lib/storage';
+import { useLocation } from 'react-router-dom';
 
 import SummaryCards from '@/components/reports/SummaryCards';
 import TransactionsFilter from '@/components/reports/TransactionsFilter';
@@ -23,17 +25,56 @@ interface LedgerEntry {
 
 const ReportsPage: React.FC = () => {
   const { parties, invoices, transactions } = useApp();
-  const [selectedPartyId, setSelectedPartyId] = useState<string>('');
+  const location = useLocation();
+  
+  // Parse URL params to set initial state
+  const getUrlParam = useCallback((paramName: string) => {
+    const params = new URLSearchParams(location.search);
+    return params.get(paramName);
+  }, [location.search]);
+  
+  // Initialize with URL params or defaults
+  const [selectedPartyId, setSelectedPartyId] = useState<string>(() => {
+    return getUrlParam('partyId') || '';
+  });
+  
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    return getUrlParam('tab') || 'transactions';
+  });
+  
   const [startDate, setStartDate] = useState<string>(() => {
+    const urlDate = getUrlParam('startDate');
+    if (urlDate) return urlDate;
+    
     const date = new Date();
     date.setMonth(date.getMonth() - 1);
     return date.toISOString().substring(0, 10);
   });
+  
   const [endDate, setEndDate] = useState<string>(() => {
+    const urlDate = getUrlParam('endDate');
+    if (urlDate) return urlDate;
+    
     const date = new Date();
     return date.toISOString().substring(0, 10);
   });
-  const [reportType, setReportType] = useState<'sales' | 'purchases' | 'all'>('all');
+  
+  const [reportType, setReportType] = useState<'sales' | 'purchases' | 'all'>(() => {
+    return (getUrlParam('type') as 'sales' | 'purchases' | 'all') || 'all';
+  });
+
+  // Set tab from URL if provided
+  useEffect(() => {
+    const tab = getUrlParam('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+    
+    const partyId = getUrlParam('partyId');
+    if (partyId) {
+      setSelectedPartyId(partyId);
+    }
+  }, [location.search, getUrlParam]);
 
   // Calculate totals
   const totalSales = invoices
@@ -80,7 +121,7 @@ const ReportsPage: React.FC = () => {
     });
   };
 
-  // Get ledger for a specific party - now including transactions
+  // Get ledger for a specific party - now including transactions in real-time
   const getPartyLedger = (partyId: string): LedgerEntry[] => {
     const party = parties.find(p => p.id === partyId);
     if (!party) return [];
@@ -174,6 +215,11 @@ const ReportsPage: React.FC = () => {
   const ledgerTotals = calculateLedgerTotals();
   const selectedPartyName = selectedPartyId ? getPartyName(selectedPartyId) : '';
 
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -187,7 +233,7 @@ const ReportsPage: React.FC = () => {
         totalUnpaid={totalUnpaid} 
       />
 
-      <Tabs defaultValue="transactions" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
           <TabsTrigger value="ledger">Party Ledger</TabsTrigger>
