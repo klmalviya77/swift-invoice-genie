@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -31,7 +30,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 
 const Dashboard: React.FC = () => {
-  // Default to open sidebar on desktop
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = React.useState(!isMobile);
   const location = useLocation();
@@ -44,6 +42,7 @@ const Dashboard: React.FC = () => {
     { name: 'Party Management', path: '/parties', icon: Users },
     { name: 'Invoice & Billing', path: '/invoices', icon: FileText },
     { name: 'Purchase Invoice', path: '/purchase-invoices', icon: Receipt },
+    { name: 'Inventory', path: '/inventory', icon: Package },
     { name: 'Money Transaction', path: '/transactions', icon: Wallet, 
       submenu: [
         { name: 'Payment', path: '/transactions/payment', icon: Wallet },
@@ -64,7 +63,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Close sidebar when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (isMobile && sidebarOpen && sidebarRef.current && 
@@ -89,9 +87,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      {/* Mobile sidebar toggle - moved to header for better spacing */}
-      
-      {/* Sidebar backdrop */}
       {isMobile && sidebarOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black bg-opacity-50"
@@ -99,17 +94,15 @@ const Dashboard: React.FC = () => {
         />
       )}
 
-      {/* Sidebar - narrow design similar to the image */}
       <div
         ref={sidebarRef}
         className={cn(
           "fixed inset-y-0 left-0 z-40 w-64 bg-white transform transition-transform duration-300 ease-in-out border-r border-gray-200",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "lg:translate-x-0 lg:static lg:inset-auto" // Always show on desktop
+          "lg:translate-x-0 lg:static lg:inset-auto"
         )}
       >
         <div className="flex flex-col h-full">
-          {/* Sidebar header - with close button */}
           <div className="p-4 border-b flex items-center justify-between">
             <Link to="/" className="flex items-center" onClick={closeSidebar}>
               <span className="text-xl font-bold text-primary">BizSwift</span>
@@ -124,7 +117,6 @@ const Dashboard: React.FC = () => {
             </Button>
           </div>
 
-          {/* Navigation items - simplified style to match design */}
           <nav className="mt-4 flex-1 overflow-y-auto">
             {navigation.map((item) => {
               const isActive = location.pathname === item.path || 
@@ -190,9 +182,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col">
-        {/* Header bar with menu toggle, search and user */}
         <header className="bg-white border-b border-gray-200 py-2 px-4 flex items-center justify-between">
           <div className="flex items-center">
             <Button 
@@ -221,7 +211,6 @@ const Dashboard: React.FC = () => {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
