@@ -62,6 +62,7 @@ import {
   getProducts
 } from '@/lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useInventoryStats } from '@/hooks/useInventoryStats';
 
 const InventoryPage: React.FC = () => {
   const { products: appProducts, parties, saveProduct, removeProduct } = useApp();
@@ -72,6 +73,7 @@ const InventoryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const { toast } = useToast();
+  const inventoryStats = useInventoryStats();
 
   // Products fetched directly from storage
   const [products, setProducts] = useState<Product[]>([]);
@@ -157,7 +159,7 @@ const InventoryPage: React.FC = () => {
   // Update filtered products when tab or search changes
   useEffect(() => {
     filterProducts(products);
-  }, [activeTab, searchTerm]);
+  }, [activeTab, searchTerm, sortField, sortDirection]);
 
   const filterProducts = (productList: Product[]) => {
     let filtered = [...productList];
@@ -320,28 +322,6 @@ const InventoryPage: React.FC = () => {
     }
     return <Badge variant="outline" className="bg-green-100 text-green-800">In Stock</Badge>;
   };
-
-  // Calculate inventory statistics
-  const getInventoryStats = () => {
-    const totalProducts = products.length;
-    const lowStockCount = lowStockProducts.length;
-    const outOfStockCount = outOfStockProducts.length;
-    const inStockCount = totalProducts - outOfStockCount;
-    
-    const totalInventoryValue = products.reduce((total, product) => {
-      return total + (product.stock * product.price);
-    }, 0);
-    
-    return {
-      totalProducts,
-      lowStockCount,
-      outOfStockCount,
-      inStockCount,
-      totalInventoryValue
-    };
-  };
-
-  const inventoryStats = getInventoryStats();
 
   return (
     <div className="space-y-6">
@@ -533,7 +513,7 @@ const InventoryPage: React.FC = () => {
 
           <Button variant="outline" onClick={() => setActiveTab(activeTab === "low-stock" ? "all" : "low-stock")}>
             <AlertTriangle className="mr-2 h-4 w-4 text-yellow-500" /> 
-            Low Stock ({stats.lowStockCount})
+            Low Stock ({inventoryStats.lowStockCount})
           </Button>
         </div>
       </div>
@@ -546,7 +526,7 @@ const InventoryPage: React.FC = () => {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalProducts}</div>
+            <div className="text-2xl font-bold">{inventoryStats.totalProducts}</div>
             <p className="text-xs text-muted-foreground">
               Items in inventory
             </p>
@@ -558,7 +538,7 @@ const InventoryPage: React.FC = () => {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{getTotalInventoryValue().toLocaleString('en-IN')}</div>
+            <div className="text-2xl font-bold">₹{inventoryStats.totalInventoryValue.toLocaleString('en-IN')}</div>
             <p className="text-xs text-muted-foreground">
               Total value at selling price
             </p>
@@ -570,7 +550,7 @@ const InventoryPage: React.FC = () => {
             <AlertTriangle className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.lowStockCount}</div>
+            <div className="text-2xl font-bold">{inventoryStats.lowStockCount}</div>
             <p className="text-xs text-muted-foreground">
               Items need replenishment
             </p>
@@ -582,7 +562,7 @@ const InventoryPage: React.FC = () => {
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.outOfStockCount}</div>
+            <div className="text-2xl font-bold">{inventoryStats.outOfStockCount}</div>
             <p className="text-xs text-muted-foreground">
               Items unavailable for sale
             </p>
@@ -590,12 +570,12 @@ const InventoryPage: React.FC = () => {
         </Card>
       </div>
 
-      {stats.outOfStockCount > 0 && (
+      {inventoryStats.outOfStockCount > 0 && (
         <Alert variant="warning">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Stock Alert</AlertTitle>
           <AlertDescription>
-            You have {stats.outOfStockCount} items that are out of stock and {stats.lowStockCount} items with low stock levels. Consider restocking soon.
+            You have {inventoryStats.outOfStockCount} items that are out of stock and {inventoryStats.lowStockCount} items with low stock levels. Consider restocking soon.
           </AlertDescription>
         </Alert>
       )}
@@ -622,17 +602,17 @@ const InventoryPage: React.FC = () => {
             <TabsTrigger value="all">All Products</TabsTrigger>
             <TabsTrigger value="low-stock">
               Low Stock 
-              {getLowStockProducts().length > 0 && (
+              {lowStockProducts.length > 0 && (
                 <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800">
-                  {getLowStockProducts().length}
+                  {lowStockProducts.length}
                 </Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="out-of-stock">
               Out of Stock
-              {getOutOfStockProducts().length > 0 && (
+              {outOfStockProducts.length > 0 && (
                 <Badge variant="destructive" className="ml-2">
-                  {getOutOfStockProducts().length}
+                  {outOfStockProducts.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -640,7 +620,7 @@ const InventoryPage: React.FC = () => {
         </Tabs>
       </div>
 
-      {sortedProducts.length === 0 ? (
+      {filteredProducts.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <Package className="h-6 w-6 text-muted-foreground" />
@@ -764,7 +744,7 @@ const InventoryPage: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedProducts.map((product) => (
+              {filteredProducts.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>{product.description}</TableCell>
@@ -788,7 +768,7 @@ const InventoryPage: React.FC = () => {
                             <DialogTitle>Stock History: {product.name}</DialogTitle>
                           </DialogHeader>
                           <div className="mt-4 max-h-80 overflow-auto">
-                            {selectedProductId && getProductHistory(selectedProductId).length > 0 ? (
+                            {productHistory.length > 0 ? (
                               <div className="space-y-4">
                                 <div className="grid grid-cols-4 font-semibold text-sm border-b pb-2">
                                   <div>Date</div>
@@ -796,7 +776,7 @@ const InventoryPage: React.FC = () => {
                                   <div className="text-right">Change</div>
                                   <div className="text-right">Type</div>
                                 </div>
-                                {getProductHistory(selectedProductId).map((entry, index) => (
+                                {productHistory.map((entry, index) => (
                                   <div key={index} className="grid grid-cols-4 text-sm">
                                     <div>{new Date(entry.date).toLocaleDateString()}</div>
                                     <div>{entry.invoiceNumber}</div>
