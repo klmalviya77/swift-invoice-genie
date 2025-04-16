@@ -160,73 +160,148 @@ const SettingsPage: React.FC = () => {
               throw new Error('Invalid backup file format');
             }
             
+            console.log("Importing data:", importedData);
+            
             // Store the imported data in IndexedDB
             const db = await openDB();
+            
+            // Clear existing data before importing
+            const clearStores = async () => {
+              const storeNames = [
+                STORES.BUSINESS_INFO,
+                STORES.PARTIES,
+                STORES.INVOICES,
+                STORES.PRODUCTS,
+                STORES.TRANSACTIONS
+              ];
+              
+              for (const storeName of storeNames) {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                await store.clear();
+                await new Promise<void>((resolve) => {
+                  transaction.oncomplete = () => resolve();
+                  transaction.onerror = (e) => {
+                    console.error(`Error clearing ${storeName}:`, e);
+                    resolve();
+                  };
+                });
+              }
+            };
+            
+            await clearStores();
             
             // Import business info
             if (importedData.businessInfo) {
               const transaction = db.transaction(STORES.BUSINESS_INFO, 'readwrite');
               const store = transaction.objectStore(STORES.BUSINESS_INFO);
-              store.clear();
-              store.add(importedData.businessInfo);
+              console.log("Adding business info:", importedData.businessInfo);
+              const request = store.add(importedData.businessInfo);
+              
+              request.onerror = (e) => {
+                console.error("Error importing business info:", e);
+              };
+              
               await new Promise<void>((resolve) => {
                 transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => {
+                  console.error("Transaction error for business info:", e);
+                  resolve();
+                };
               });
             }
             
             // Import parties
-            if (importedData.parties) {
+            if (importedData.parties && importedData.parties.length > 0) {
               const transaction = db.transaction(STORES.PARTIES, 'readwrite');
               const store = transaction.objectStore(STORES.PARTIES);
-              store.clear();
+              console.log("Adding parties:", importedData.parties.length);
+              
               for (const party of importedData.parties) {
-                store.add(party);
+                const request = store.add(party);
+                request.onerror = (e) => {
+                  console.error("Error importing party:", party.id, e);
+                };
               }
+              
               await new Promise<void>((resolve) => {
                 transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => {
+                  console.error("Transaction error for parties:", e);
+                  resolve();
+                };
               });
             }
             
             // Import invoices
-            if (importedData.invoices) {
+            if (importedData.invoices && importedData.invoices.length > 0) {
               const transaction = db.transaction(STORES.INVOICES, 'readwrite');
               const store = transaction.objectStore(STORES.INVOICES);
-              store.clear();
+              console.log("Adding invoices:", importedData.invoices.length);
+              
               for (const invoice of importedData.invoices) {
-                store.add(invoice);
+                const request = store.add(invoice);
+                request.onerror = (e) => {
+                  console.error("Error importing invoice:", invoice.id, e);
+                };
               }
+              
               await new Promise<void>((resolve) => {
                 transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => {
+                  console.error("Transaction error for invoices:", e);
+                  resolve();
+                };
               });
             }
             
             // Import products
-            if (importedData.products) {
+            if (importedData.products && importedData.products.length > 0) {
               const transaction = db.transaction(STORES.PRODUCTS, 'readwrite');
               const store = transaction.objectStore(STORES.PRODUCTS);
-              store.clear();
+              console.log("Adding products:", importedData.products.length);
+              
               for (const product of importedData.products) {
-                store.add(product);
+                const request = store.add(product);
+                request.onerror = (e) => {
+                  console.error("Error importing product:", product.id, e);
+                };
               }
+              
               await new Promise<void>((resolve) => {
                 transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => {
+                  console.error("Transaction error for products:", e);
+                  resolve();
+                };
               });
             }
             
             // Import transactions
-            if (importedData.transactions) {
+            if (importedData.transactions && importedData.transactions.length > 0) {
               const transaction = db.transaction(STORES.TRANSACTIONS, 'readwrite');
               const store = transaction.objectStore(STORES.TRANSACTIONS);
-              store.clear();
+              console.log("Adding transactions:", importedData.transactions.length);
+              
               for (const t of importedData.transactions) {
-                store.add(t);
+                const request = store.add(t);
+                request.onerror = (e) => {
+                  console.error("Error importing transaction:", t.id, e);
+                };
               }
+              
               await new Promise<void>((resolve) => {
                 transaction.oncomplete = () => resolve();
+                transaction.onerror = (e) => {
+                  console.error("Transaction error for transactions:", e);
+                  resolve();
+                };
               });
             }
             
             db.close();
+            
+            console.log("Import completed, refreshing data");
             
             // Refresh the app data
             await refreshData();
@@ -235,6 +310,15 @@ const SettingsPage: React.FC = () => {
               title: 'Import Successful',
               description: 'Your business data has been imported successfully.',
             });
+            
+            // Reset UI state
+            setIsImporting(false);
+            setBackupFile(null);
+            // Reset the file input
+            const fileInput = document.getElementById('backup-file') as HTMLInputElement;
+            if (fileInput) {
+              fileInput.value = '';
+            }
           }
         } catch (error) {
           console.error('Import parsing error:', error);
@@ -243,7 +327,6 @@ const SettingsPage: React.FC = () => {
             description: 'The selected file is not a valid backup file.',
             variant: 'destructive',
           });
-        } finally {
           setIsImporting(false);
           setBackupFile(null);
           // Reset the file input

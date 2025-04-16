@@ -5,11 +5,13 @@ import { Package, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getLowStockProducts, getOutOfStockProducts } from '@/lib/storage';
+import { useApp } from '@/contexts/AppContext';
 
 const InventoryNavItem: React.FC = () => {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [outOfStockCount, setOutOfStockCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { products } = useApp(); // Use AppContext to detect data changes
   
   useEffect(() => {
     const fetchCounts = async () => {
@@ -30,7 +32,7 @@ const InventoryNavItem: React.FC = () => {
     };
     
     fetchCounts();
-  }, []);
+  }, [products]); // Re-fetch counts when products change
   
   const hasAlerts = lowStockCount > 0 || outOfStockCount > 0;
 

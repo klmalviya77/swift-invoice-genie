@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { getLowStockProducts, getOutOfStockProducts, getProducts } from '@/lib/storage';
+import { useApp } from '@/contexts/AppContext';
 
 export const useInventoryStats = () => {
   const [stats, setStats] = useState({
@@ -12,6 +13,7 @@ export const useInventoryStats = () => {
   });
   
   const [loading, setLoading] = useState(true);
+  const { products } = useApp(); // Use AppContext to detect data changes
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -31,6 +33,14 @@ export const useInventoryStats = () => {
           return total + (product.stock * product.price);
         }, 0);
         
+        console.log("Updated inventory stats:", {
+          lowStockCount,
+          outOfStockCount,
+          totalProducts,
+          inStockCount: totalProducts - outOfStockCount,
+          totalInventoryValue
+        });
+        
         setStats({
           lowStockCount,
           outOfStockCount,
@@ -46,7 +56,7 @@ export const useInventoryStats = () => {
     };
     
     fetchStats();
-  }, []);
+  }, [products]); // Re-fetch stats when products change
 
   return { ...stats, loading };
 };
