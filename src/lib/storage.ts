@@ -1,3 +1,4 @@
+
 // Types for our data
 export interface Party {
   id: string;
@@ -84,97 +85,95 @@ const defaultBusinessInfo: BusinessInfo = {
   termsAndConditions: '1. Payment due within 30 days\n2. Goods once sold cannot be returned\n3. All disputes subject to local jurisdiction'
 };
 
-// Storage keys
-const PARTIES_KEY = 'bizswift_parties';
-const INVOICES_KEY = 'bizswift_invoices';
-const BUSINESS_INFO_KEY = 'bizswift_business_info';
-const PRODUCTS_KEY = 'bizswift_products';
-const TRANSACTIONS_KEY = 'bizswift_transactions';
+// Import IndexedDB utilities
+import { 
+  openDB, 
+  getAllItems, 
+  getItemById, 
+  saveItem, 
+  deleteItem, 
+  STORES,
+  migrateFromLocalStorage
+} from './db';
+
+// Initialize the database and migrate data from localStorage if needed
+let dbInitialized = false;
+
+const initializeDB = async (): Promise<void> => {
+  if (!dbInitialized) {
+    await migrateFromLocalStorage();
+    dbInitialized = true;
+  }
+};
+
+// Initialize DB when this module is loaded
+initializeDB().catch(console.error);
 
 // Helper functions
-export const getParties = (): Party[] => {
-  const partiesJson = localStorage.getItem(PARTIES_KEY);
-  return partiesJson ? JSON.parse(partiesJson) : [];
+export const getParties = async (): Promise<Party[]> => {
+  await initializeDB();
+  return await getAllItems<Party>(STORES.PARTIES);
 };
 
-export const saveParty = (party: Party): void => {
-  const parties = getParties();
-  if (!party.id) {
-    party.id = crypto.randomUUID();
-  }
-  
-  const existingIndex = parties.findIndex(p => p.id === party.id);
-  if (existingIndex >= 0) {
-    parties[existingIndex] = party;
-  } else {
-    parties.push(party);
-  }
-  
-  localStorage.setItem(PARTIES_KEY, JSON.stringify(parties));
+export const saveParty = async (party: Party): Promise<void> => {
+  await initializeDB();
+  await saveItem<Party>(STORES.PARTIES, party);
 };
 
-export const deleteParty = (id: string): void => {
-  const parties = getParties().filter(party => party.id !== id);
-  localStorage.setItem(PARTIES_KEY, JSON.stringify(parties));
+export const deleteParty = async (id: string): Promise<void> => {
+  await initializeDB();
+  await deleteItem(STORES.PARTIES, id);
 };
 
-export const getPartyById = (id: string): Party | undefined => {
-  return getParties().find(party => party.id === id);
+export const getPartyById = async (id: string): Promise<Party | undefined> => {
+  await initializeDB();
+  return await getItemById<Party>(STORES.PARTIES, id);
 };
 
 // Products functions
-export const getProducts = (): Product[] => {
-  const productsJson = localStorage.getItem(PRODUCTS_KEY);
-  return productsJson ? JSON.parse(productsJson) : [];
+export const getProducts = async (): Promise<Product[]> => {
+  await initializeDB();
+  return await getAllItems<Product>(STORES.PRODUCTS);
 };
 
-export const saveProduct = (product: Product): void => {
-  const products = getProducts();
-  if (!product.id) {
-    product.id = crypto.randomUUID();
-  }
-  
+export const saveProduct = async (product: Product): Promise<void> => {
+  await initializeDB();
   if (product.stock === undefined) {
     product.stock = 0;
   }
-  
-  const existingIndex = products.findIndex(p => p.id === product.id);
-  if (existingIndex >= 0) {
-    products[existingIndex] = product;
-  } else {
-    products.push(product);
-  }
-  
-  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+  await saveItem<Product>(STORES.PRODUCTS, product);
 };
 
-export const deleteProduct = (id: string): void => {
-  const products = getProducts().filter(product => product.id !== id);
-  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+export const deleteProduct = async (id: string): Promise<void> => {
+  await initializeDB();
+  await deleteItem(STORES.PRODUCTS, id);
 };
 
-export const getProductById = (id: string): Product | undefined => {
-  return getProducts().find(product => product.id === id);
+export const getProductById = async (id: string): Promise<Product | undefined> => {
+  await initializeDB();
+  return await getItemById<Product>(STORES.PRODUCTS, id);
 };
 
-export const adjustProductStock = (productId: string, quantity: number): boolean => {
-  const product = getProductById(productId);
+export const adjustProductStock = async (productId: string, quantity: number): Promise<boolean> => {
+  await initializeDB();
+  const product = await getProductById(productId);
   if (!product) return false;
   
   product.stock += quantity;
-  saveProduct(product);
+  await saveProduct(product);
   return true;
 };
 
-export const hasEnoughStock = (productId: string, requestedQty: number): boolean => {
-  const product = getProductById(productId);
+export const hasEnoughStock = async (productId: string, requestedQty: number): Promise<boolean> => {
+  await initializeDB();
+  const product = await getProductById(productId);
   if (!product) return false;
   return product.stock >= requestedQty;
 };
 
-export const getInvoices = (): Invoice[] => {
-  const invoicesJson = localStorage.getItem(INVOICES_KEY);
-  const invoices = invoicesJson ? JSON.parse(invoicesJson) : [];
+export const getInvoices = async (): Promise<Invoice[]> => {
+  await initializeDB();
+  const invoices = await getAllItems<Invoice>(STORES.INVOICES);
   
   return invoices.map((invoice: Invoice) => {
     if (invoice.paidAmount === undefined) {
@@ -184,8 +183,9 @@ export const getInvoices = (): Invoice[] => {
   });
 };
 
-export const generateInvoiceNumber = (): string => {
-  const invoices = getInvoices();
+export const generateInvoiceNumber = async (): Promise<string> => {
+  await initializeDB();
+  const invoices = await getInvoices();
   const date = new Date();
   const year = date.getFullYear().toString().substring(2);
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -206,8 +206,9 @@ export const generateInvoiceNumber = (): string => {
   return `${monthPrefix}${nextNumber.toString().padStart(3, '0')}`;
 };
 
-export const saveInvoice = (invoice: Invoice): Invoice => {
-  const invoices = getInvoices();
+export const saveInvoice = async (invoice: Invoice): Promise<Invoice> => {
+  await initializeDB();
+  const invoices = await getInvoices();
   const isNewInvoice = !invoice.id || !invoices.some(i => i.id === invoice.id);
   
   if (!invoice.id) {
@@ -215,7 +216,7 @@ export const saveInvoice = (invoice: Invoice): Invoice => {
   }
   
   if (!invoice.invoiceNumber) {
-    invoice.invoiceNumber = generateInvoiceNumber();
+    invoice.invoiceNumber = await generateInvoiceNumber();
   }
   
   if (invoice.paidAmount === undefined) {
@@ -231,87 +232,114 @@ export const saveInvoice = (invoice: Invoice): Invoice => {
   }
   
   if (isNewInvoice) {
-    const party = getPartyById(invoice.partyId);
+    const party = await getPartyById(invoice.partyId);
     
     if (party?.type === 'customer') {
-      invoice.items.forEach(item => {
+      for (const item of invoice.items) {
         if (item.productId) {
-          adjustProductStock(item.productId, -item.qty);
+          await adjustProductStock(item.productId, -item.qty);
         }
-      });
+      }
     } else if (party?.type === 'supplier') {
-      invoice.items.forEach(item => {
+      for (const item of invoice.items) {
         if (item.productId) {
-          adjustProductStock(item.productId, item.qty);
+          await adjustProductStock(item.productId, item.qty);
         }
-      });
+      }
     }
   }
   
-  const existingIndex = invoices.findIndex(i => i.id === invoice.id);
-  if (existingIndex >= 0) {
-    invoices[existingIndex] = invoice;
-  } else {
-    invoices.push(invoice);
-  }
-  
-  localStorage.setItem(INVOICES_KEY, JSON.stringify(invoices));
+  await saveItem<Invoice>(STORES.INVOICES, invoice);
   return invoice;
 };
 
-export const deleteInvoice = (id: string): void => {
-  const invoices = getInvoices().filter(invoice => invoice.id !== id);
-  localStorage.setItem(INVOICES_KEY, JSON.stringify(invoices));
+export const deleteInvoice = async (id: string): Promise<void> => {
+  await initializeDB();
+  await deleteItem(STORES.INVOICES, id);
 };
 
-export const getInvoiceById = (id: string): Invoice | undefined => {
-  return getInvoices().find(invoice => invoice.id === id);
+export const getInvoiceById = async (id: string): Promise<Invoice | undefined> => {
+  await initializeDB();
+  return await getItemById<Invoice>(STORES.INVOICES, id);
 };
 
-export const getInvoicesByPartyId = (partyId: string): Invoice[] => {
-  return getInvoices().filter(invoice => invoice.partyId === partyId);
+export const getInvoicesByPartyId = async (partyId: string): Promise<Invoice[]> => {
+  await initializeDB();
+  const invoices = await getInvoices();
+  return invoices.filter(invoice => invoice.partyId === partyId);
 };
 
-export const getBusinessInfo = (): BusinessInfo => {
-  const infoJson = localStorage.getItem(BUSINESS_INFO_KEY);
-  return infoJson ? JSON.parse(infoJson) : defaultBusinessInfo;
+export const getBusinessInfo = async (): Promise<BusinessInfo> => {
+  await initializeDB();
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.BUSINESS_INFO, 'readonly');
+      const store = transaction.objectStore(STORES.BUSINESS_INFO);
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        if (request.result && request.result.length > 0) {
+          resolve(request.result[0]);
+        } else {
+          resolve(defaultBusinessInfo);
+        }
+      };
+      
+      request.onerror = () => {
+        console.error('Error getting business info:', request.error);
+        reject(request.error);
+      };
+      
+      transaction.oncomplete = () => {
+        db.close();
+      };
+    });
+  } catch (error) {
+    console.error('Failed to get business info:', error);
+    return defaultBusinessInfo;
+  }
 };
 
-export const saveBusinessInfo = (info: BusinessInfo): void => {
-  localStorage.setItem(BUSINESS_INFO_KEY, JSON.stringify(info));
+export const saveBusinessInfo = async (info: BusinessInfo): Promise<void> => {
+  await initializeDB();
+  await saveItem(STORES.BUSINESS_INFO, info);
 };
 
-export const getInvoicesByDateRange = (startDate: string, endDate: string): Invoice[] => {
+export const getInvoicesByDateRange = async (startDate: string, endDate: string): Promise<Invoice[]> => {
+  await initializeDB();
   const start = new Date(startDate);
   const end = new Date(endDate);
   end.setHours(23, 59, 59);
   
-  return getInvoices().filter(invoice => {
+  const invoices = await getInvoices();
+  return invoices.filter(invoice => {
     const invoiceDate = new Date(invoice.date);
     return invoiceDate >= start && invoiceDate <= end;
   });
 };
 
-export const generateQuickInvoice = (
+export const generateQuickInvoice = async (
   partyId: string, 
   productId: string, 
   quantity: number, 
   discount: number = 0, 
   gstPercentage: number = 18,
   status: 'paid' | 'partial' | 'unpaid' = 'unpaid'
-): Invoice => {
-  const product = getProductById(productId);
+): Promise<Invoice> => {
+  await initializeDB();
+  const product = await getProductById(productId);
   
   if (!product) {
     throw new Error('Product not found');
   }
   
-  const party = getPartyById(partyId);
+  const party = await getPartyById(partyId);
   if (!party) {
     throw new Error('Party not found');
   }
   
-  if (party.type === 'customer' && !hasEnoughStock(productId, quantity)) {
+  if (party.type === 'customer' && !(await hasEnoughStock(productId, quantity))) {
     throw new Error(`Not enough stock available for ${product.name}. Current stock: ${product.stock}`);
   }
   
@@ -332,7 +360,7 @@ export const generateQuickInvoice = (
   
   const invoice: Invoice = {
     id: crypto.randomUUID(),
-    invoiceNumber: generateInvoiceNumber(),
+    invoiceNumber: await generateInvoiceNumber(),
     partyId,
     date: new Date().toISOString().split('T')[0],
     items: [invoiceItem],
@@ -351,27 +379,32 @@ export const generateQuickInvoice = (
     paymentTerm: ''
   };
   
-  return saveInvoice(invoice);
+  return await saveInvoice(invoice);
 };
 
-export const getLowStockProducts = (): Product[] => {
-  return getProducts().filter(product => {
+export const getLowStockProducts = async (): Promise<Product[]> => {
+  await initializeDB();
+  const products = await getProducts();
+  return products.filter(product => {
     const threshold = product.lowStockAlert || 5;
     return product.stock <= threshold;
   });
 };
 
-export const getOutOfStockProducts = (): Product[] => {
-  return getProducts().filter(product => product.stock <= 0);
+export const getOutOfStockProducts = async (): Promise<Product[]> => {
+  await initializeDB();
+  const products = await getProducts();
+  return products.filter(product => product.stock <= 0);
 };
 
-export const getStockMovementHistory = (productId: string): { date: string, change: number, invoiceId: string, invoiceNumber: string }[] => {
+export const getStockMovementHistory = async (productId: string): Promise<{ date: string, change: number, invoiceId: string, invoiceNumber: string }[]> => {
+  await initializeDB();
   const history: { date: string, change: number, invoiceId: string, invoiceNumber: string }[] = [];
   
-  const invoices = getInvoices();
+  const invoices = await getInvoices();
   
   for (const invoice of invoices) {
-    const party = getPartyById(invoice.partyId);
+    const party = await getPartyById(invoice.partyId);
     if (!party) continue;
     
     const isCustomer = party.type === 'customer';
@@ -391,13 +424,13 @@ export const getStockMovementHistory = (productId: string): { date: string, chan
   return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
 
-export const getTransactions = (): Transaction[] => {
-  const transactionsJson = localStorage.getItem(TRANSACTIONS_KEY);
-  return transactionsJson ? JSON.parse(transactionsJson) : [];
+export const getTransactions = async (): Promise<Transaction[]> => {
+  await initializeDB();
+  return await getAllItems<Transaction>(STORES.TRANSACTIONS);
 };
 
-export const saveTransaction = (transaction: Transaction): void => {
-  const transactions = getTransactions();
+export const saveTransaction = async (transaction: Transaction): Promise<void> => {
+  await initializeDB();
   if (!transaction.id) {
     transaction.id = crypto.randomUUID();
   }
@@ -406,42 +439,43 @@ export const saveTransaction = (transaction: Transaction): void => {
     transaction.createdAt = new Date().toISOString();
   }
   
-  const existingIndex = transactions.findIndex(t => t.id === transaction.id);
-  if (existingIndex >= 0) {
-    transactions[existingIndex] = transaction;
-  } else {
-    transactions.push(transaction);
-  }
-  
-  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+  await saveItem<Transaction>(STORES.TRANSACTIONS, transaction);
 };
 
-export const deleteTransaction = (id: string): void => {
-  const transactions = getTransactions().filter(transaction => transaction.id !== id);
-  localStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(transactions));
+export const deleteTransaction = async (id: string): Promise<void> => {
+  await initializeDB();
+  await deleteItem(STORES.TRANSACTIONS, id);
 };
 
-export const getTransactionsByPartyId = (partyId: string): Transaction[] => {
-  return getTransactions().filter(transaction => transaction.partyId === partyId);
+export const getTransactionsByPartyId = async (partyId: string): Promise<Transaction[]> => {
+  await initializeDB();
+  const transactions = await getTransactions();
+  return transactions.filter(transaction => transaction.partyId === partyId);
 };
 
-export const getTransactionsByType = (type: 'payment' | 'receipt'): Transaction[] => {
-  return getTransactions().filter(transaction => transaction.type === type);
+export const getTransactionsByType = async (type: 'payment' | 'receipt'): Promise<Transaction[]> => {
+  await initializeDB();
+  const transactions = await getTransactions();
+  return transactions.filter(transaction => transaction.type === type);
 };
 
-export const getTransactionsByInvoiceId = (invoiceId: string): Transaction[] => {
-  return getTransactions().filter(transaction => transaction.invoiceId === invoiceId);
+export const getTransactionsByInvoiceId = async (invoiceId: string): Promise<Transaction[]> => {
+  await initializeDB();
+  const transactions = await getTransactions();
+  return transactions.filter(transaction => transaction.invoiceId === invoiceId);
 };
 
-export const getInvoiceRemainingAmount = (invoiceId: string): number => {
-  const invoice = getInvoiceById(invoiceId);
+export const getInvoiceRemainingAmount = async (invoiceId: string): Promise<number> => {
+  await initializeDB();
+  const invoice = await getInvoiceById(invoiceId);
   if (!invoice) return 0;
   
   return Math.max(0, invoice.total - invoice.paidAmount);
 };
 
-export const updateInvoicePaymentStatus = (invoice: Invoice): Invoice => {
-  const transactions = getTransactionsByInvoiceId(invoice.id);
+export const updateInvoicePaymentStatus = async (invoice: Invoice): Promise<Invoice> => {
+  await initializeDB();
+  const transactions = await getTransactionsByInvoiceId(invoice.id);
   const paidAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
   
   const updatedInvoice = {
@@ -457,5 +491,5 @@ export const updateInvoicePaymentStatus = (invoice: Invoice): Invoice => {
     updatedInvoice.status = 'unpaid';
   }
   
-  return saveInvoice(updatedInvoice);
+  return await saveInvoice(updatedInvoice);
 };

@@ -38,29 +38,40 @@ interface AppContextType {
   products: Product[];
   transactions: Transaction[];
   businessInfo: BusinessInfo;
-  addParty: (party: Party) => void;
-  updateParty: (party: Party) => void;
-  removeParty: (id: string) => void;
-  addInvoice: (invoice: Invoice) => Invoice;
-  updateInvoice: (invoice: Invoice) => void;
-  removeInvoice: (id: string) => void;
-  saveProduct: (product: Product) => void;
-  removeProduct: (id: string) => void;
-  saveTransaction: (transaction: Transaction) => void;
-  removeTransaction: (id: string) => void;
-  updateBusinessInfo: (info: BusinessInfo) => void;
-  getParty: (id: string) => Party | undefined;
-  getInvoice: (id: string) => Invoice | undefined;
-  getTransactionsByParty: (partyId: string) => Transaction[];
-  getTransactionsByInvoice: (invoiceId: string) => Transaction[];
-  getInvoiceRemainingBalance: (invoiceId: string) => number;
-  updateInvoiceStatusFromTransaction: (partyId: string, amount: number, invoiceId?: string) => void;
-  recordPartialPayment: (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => void;
-  // New inventory-related functions
-  adjustStock: (productId: string, quantity: number) => boolean;
-  getLowStock: () => Product[];
-  getOutOfStock: () => Product[];
+  loading: boolean;
+  addParty: (party: Party) => Promise<void>;
+  updateParty: (party: Party) => Promise<void>;
+  removeParty: (id: string) => Promise<void>;
+  addInvoice: (invoice: Invoice) => Promise<Invoice>;
+  updateInvoice: (invoice: Invoice) => Promise<void>;
+  removeInvoice: (id: string) => Promise<void>;
+  saveProduct: (product: Product) => Promise<void>;
+  removeProduct: (id: string) => Promise<void>;
+  saveTransaction: (transaction: Transaction) => Promise<void>;
+  removeTransaction: (id: string) => Promise<void>;
+  updateBusinessInfo: (info: BusinessInfo) => Promise<void>;
+  getParty: (id: string) => Promise<Party | undefined>;
+  getInvoice: (id: string) => Promise<Invoice | undefined>;
+  getTransactionsByParty: (partyId: string) => Promise<Transaction[]>;
+  getTransactionsByInvoice: (invoiceId: string) => Promise<Transaction[]>;
+  getInvoiceRemainingBalance: (invoiceId: string) => Promise<number>;
+  updateInvoiceStatusFromTransaction: (partyId: string, amount: number, invoiceId?: string) => Promise<void>;
+  recordPartialPayment: (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => Promise<void>;
+  // Inventory-related functions
+  adjustStock: (productId: string, quantity: number) => Promise<boolean>;
+  getLowStock: () => Promise<Product[]>;
+  getOutOfStock: () => Promise<Product[]>;
+  refreshData: () => Promise<void>;
 }
+
+const defaultBusinessInfo: BusinessInfo = {
+  name: 'BizSwift Enterprise',
+  address: '123 Business Street, City, State, PIN',
+  phone: '9876543210',
+  email: 'contact@bizswift.com',
+  gst: '22AAAAA0000A1Z5',
+  termsAndConditions: '1. Payment due within 30 days\n2. Goods once sold cannot be returned\n3. All disputes subject to local jurisdiction'
+};
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -69,127 +80,164 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(getBusinessInfo());
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(defaultBusinessInfo);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Load initial data
+  const refreshData = async () => {
+    try {
+      setLoading(true);
+      
+      const [newParties, newInvoices, newProducts, newTransactions, newBusinessInfo] = await Promise.all([
+        getParties(),
+        getInvoices(),
+        getProducts(),
+        getTransactions(),
+        getBusinessInfo()
+      ]);
+      
+      setParties(newParties);
+      setInvoices(newInvoices);
+      setProducts(newProducts);
+      setTransactions(newTransactions);
+      setBusinessInfo(newBusinessInfo);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    setParties(getParties());
-    setInvoices(getInvoices());
-    setProducts(getProducts());
-    setTransactions(getTransactions());
+    refreshData();
   }, []);
 
-  const addParty = (party: Party) => {
-    saveParty(party);
-    setParties(getParties());
+  const addParty = async (party: Party) => {
+    await saveParty(party);
+    const newParties = await getParties();
+    setParties(newParties);
   };
 
-  const updateParty = (party: Party) => {
-    saveParty(party);
-    setParties(getParties());
+  const updateParty = async (party: Party) => {
+    await saveParty(party);
+    const newParties = await getParties();
+    setParties(newParties);
   };
 
-  const removeParty = (id: string) => {
-    deleteParty(id);
-    setParties(getParties());
+  const removeParty = async (id: string) => {
+    await deleteParty(id);
+    const newParties = await getParties();
+    setParties(newParties);
   };
 
-  const addInvoice = (invoice: Invoice) => {
-    saveInvoice(invoice);
-    setInvoices(getInvoices());
-    // Make sure product stock is updated after invoicing
-    setProducts(getProducts());
-    return invoice;
+  const addInvoice = async (invoice: Invoice) => {
+    const savedInvoice = await saveInvoice(invoice);
+    // Refresh invoices and products as stock might have changed
+    const [newInvoices, newProducts] = await Promise.all([
+      getInvoices(),
+      getProducts()
+    ]);
+    setInvoices(newInvoices);
+    setProducts(newProducts);
+    return savedInvoice;
   };
 
-  const updateInvoice = (invoice: Invoice) => {
-    saveInvoice(invoice);
-    setInvoices(getInvoices());
+  const updateInvoice = async (invoice: Invoice) => {
+    await saveInvoice(invoice);
+    const newInvoices = await getInvoices();
+    setInvoices(newInvoices);
   };
 
-  const removeInvoice = (id: string) => {
-    deleteInvoice(id);
-    setInvoices(getInvoices());
+  const removeInvoice = async (id: string) => {
+    await deleteInvoice(id);
+    const newInvoices = await getInvoices();
+    setInvoices(newInvoices);
   };
 
-  const saveProduct = (product: Product) => {
-    saveProductToStorage(product);
-    setProducts(getProducts());
+  const saveProduct = async (product: Product) => {
+    await saveProductToStorage(product);
+    const newProducts = await getProducts();
+    setProducts(newProducts);
   };
 
-  const removeProduct = (id: string) => {
-    deleteProduct(id);
-    setProducts(getProducts());
+  const removeProduct = async (id: string) => {
+    await deleteProduct(id);
+    const newProducts = await getProducts();
+    setProducts(newProducts);
   };
 
-  const saveTransaction = (transaction: Transaction) => {
-    saveTransactionToStorage(transaction);
-    setTransactions(getTransactions());
+  const saveTransaction = async (transaction: Transaction) => {
+    await saveTransactionToStorage(transaction);
+    const newTransactions = await getTransactions();
+    setTransactions(newTransactions);
     
     // Automatically update invoice status when a new transaction is created
     if (transaction.invoiceId) {
       // If transaction is for a specific invoice
-      const invoice = getInvoiceById(transaction.invoiceId);
+      const invoice = await getInvoiceById(transaction.invoiceId);
       if (invoice) {
-        const updatedInvoice = updateInvoicePaymentStatus(invoice);
-        setInvoices(getInvoices());
+        await updateInvoicePaymentStatus(invoice);
+        const newInvoices = await getInvoices();
+        setInvoices(newInvoices);
       }
     } else {
       // If transaction is general (not for a specific invoice)
-      updateInvoiceStatusFromTransaction(transaction.partyId, transaction.amount);
+      await updateInvoiceStatusFromTransaction(transaction.partyId, transaction.amount);
     }
   };
 
-  const removeTransaction = (id: string) => {
+  const removeTransaction = async (id: string) => {
     const transaction = transactions.find(t => t.id === id);
-    deleteTransaction(id);
-    setTransactions(getTransactions());
+    await deleteTransaction(id);
+    const newTransactions = await getTransactions();
+    setTransactions(newTransactions);
     
     // If transaction was linked to an invoice, update invoice status
     if (transaction?.invoiceId) {
-      const invoice = getInvoiceById(transaction.invoiceId);
+      const invoice = await getInvoiceById(transaction.invoiceId);
       if (invoice) {
-        const updatedInvoice = updateInvoicePaymentStatus(invoice);
-        setInvoices(getInvoices());
+        await updateInvoicePaymentStatus(invoice);
+        const newInvoices = await getInvoices();
+        setInvoices(newInvoices);
       }
     }
   };
 
-  const updateBusinessInfo = (info: BusinessInfo) => {
-    saveBusinessInfo(info);
+  const updateBusinessInfo = async (info: BusinessInfo) => {
+    await saveBusinessInfo(info);
     setBusinessInfo(info);
   };
 
-  const getParty = (id: string): Party | undefined => {
-    return getPartyById(id);
+  const getParty = async (id: string): Promise<Party | undefined> => {
+    return await getPartyById(id);
   };
 
-  const getInvoice = (id: string): Invoice | undefined => {
-    return getInvoiceById(id);
+  const getInvoice = async (id: string): Promise<Invoice | undefined> => {
+    return await getInvoiceById(id);
   };
 
-  const getTransactionsByParty = (partyId: string): Transaction[] => {
-    return getTransactionsByPartyId(partyId);
+  const getTransactionsByParty = async (partyId: string): Promise<Transaction[]> => {
+    return await getTransactionsByPartyId(partyId);
   };
 
-  const getTransactionsByInvoice = (invoiceId: string): Transaction[] => {
-    return getTransactionsByInvoiceId(invoiceId);
+  const getTransactionsByInvoice = async (invoiceId: string): Promise<Transaction[]> => {
+    return await getTransactionsByInvoiceId(invoiceId);
   };
 
-  const getInvoiceRemainingBalance = (invoiceId: string): number => {
-    return getInvoiceRemainingAmount(invoiceId);
+  const getInvoiceRemainingBalance = async (invoiceId: string): Promise<number> => {
+    return await getInvoiceRemainingAmount(invoiceId);
   };
 
   // Function to record a partial payment for an invoice
-  const recordPartialPayment = (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => {
-    const invoice = getInvoiceById(invoiceId);
+  const recordPartialPayment = async (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => {
+    const invoice = await getInvoiceById(invoiceId);
     if (!invoice) return;
     
     // Create and save the transaction
     const transaction: Transaction = {
       id: crypto.randomUUID(),
       type: invoice.partyId ? (
-        getPartyById(invoice.partyId)?.type === 'supplier' ? 'payment' : 'receipt'
+        (await getPartyById(invoice.partyId))?.type === 'supplier' ? 'payment' : 'receipt'
       ) : 'receipt',
       amount: amount,
       date: new Date().toISOString().split('T')[0],
@@ -202,30 +250,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...paymentDetails
     };
     
-    saveTransactionToStorage(transaction);
-    setTransactions(getTransactions());
+    await saveTransactionToStorage(transaction);
+    const newTransactions = await getTransactions();
+    setTransactions(newTransactions);
     
     // Update the invoice
-    const updatedInvoice = updateInvoicePaymentStatus(invoice);
-    setInvoices(getInvoices());
+    const updatedInvoice = await updateInvoicePaymentStatus(invoice);
+    const newInvoices = await getInvoices();
+    setInvoices(newInvoices);
   };
 
   // Updated function: Updates invoice status based on transactions
-  const updateInvoiceStatusFromTransaction = (partyId: string, amount: number, invoiceId?: string) => {
+  const updateInvoiceStatusFromTransaction = async (partyId: string, amount: number, invoiceId?: string) => {
     if (invoiceId) {
       // If a specific invoice is provided, just update that one
-      const invoice = getInvoiceById(invoiceId);
+      const invoice = await getInvoiceById(invoiceId);
       if (invoice) {
-        const updatedInvoice = updateInvoicePaymentStatus(invoice);
-        setInvoices(getInvoices());
+        await updateInvoicePaymentStatus(invoice);
+        const newInvoices = await getInvoices();
+        setInvoices(newInvoices);
       }
       return;
     }
     
     // Get all unpaid or partially paid invoices for this party
-    const partyInvoices = getInvoices().filter(
-      inv => inv.partyId === partyId && (inv.status === 'unpaid' || inv.status === 'partial')
-    ).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const allInvoices = await getInvoices();
+    const partyInvoices = allInvoices
+      .filter(inv => inv.partyId === partyId && (inv.status === 'unpaid' || inv.status === 'partial'))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     if (partyInvoices.length === 0) return;
 
@@ -256,30 +308,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Save the updated invoices
     for (const invoice of updatedInvoices) {
-      saveInvoice(invoice);
+      await saveInvoice(invoice);
     }
 
     // Refresh invoices in state if any were updated
     if (updatedInvoices.length > 0) {
-      setInvoices(getInvoices());
+      const newInvoices = await getInvoices();
+      setInvoices(newInvoices);
     }
   };
 
-  // New inventory management functions
-  const adjustStock = (productId: string, quantity: number): boolean => {
-    const result = adjustProductStock(productId, quantity);
+  // Inventory management functions
+  const adjustStock = async (productId: string, quantity: number): Promise<boolean> => {
+    const result = await adjustProductStock(productId, quantity);
     if (result) {
-      setProducts(getProducts());
+      const newProducts = await getProducts();
+      setProducts(newProducts);
     }
     return result;
   };
 
-  const getLowStock = (): Product[] => {
-    return getLowStockProducts();
+  const getLowStock = async (): Promise<Product[]> => {
+    return await getLowStockProducts();
   };
 
-  const getOutOfStock = (): Product[] => {
-    return getOutOfStockProducts();
+  const getOutOfStock = async (): Promise<Product[]> => {
+    return await getOutOfStockProducts();
   };
 
   return (
@@ -290,6 +344,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         products,
         transactions,
         businessInfo,
+        loading,
         addParty,
         updateParty,
         removeParty,
@@ -308,10 +363,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         getInvoiceRemainingBalance,
         updateInvoiceStatusFromTransaction,
         recordPartialPayment,
-        // New inventory functions
+        // Inventory functions
         adjustStock,
         getLowStock,
-        getOutOfStock
+        getOutOfStock,
+        refreshData
       }}
     >
       {children}

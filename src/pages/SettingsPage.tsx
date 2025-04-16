@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,13 +15,16 @@ import {
   CardTitle 
 } from '@/components/ui/card';
 import { Download, Upload, Database } from 'lucide-react';
+import { openDB, STORES } from '@/lib/db';
 
 const SettingsPage: React.FC = () => {
-  const { businessInfo, updateBusinessInfo, parties, invoices, products } = useApp();
+  const { businessInfo, updateBusinessInfo, parties, invoices, products, transactions, refreshData } = useApp();
   const [formData, setFormData] = useState<BusinessInfo>(businessInfo);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const [backupFile, setBackupFile] = useState<File | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -64,11 +68,11 @@ const SettingsPage: React.FC = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (validateForm()) {
-      updateBusinessInfo(formData);
+      await updateBusinessInfo(formData);
       toast({
         title: 'Settings Updated',
         description: 'Your business information has been updated successfully.',
@@ -82,40 +86,48 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleExportData = () => {
-    // Get all data from localStorage
-    const transactions = localStorage.getItem('bizswift_transactions') ? 
-      JSON.parse(localStorage.getItem('bizswift_transactions') || '[]') : [];
+  const handleExportData = async () => {
+    try {
+      setIsExporting(true);
+      // Create a JSON blob with all the app data
+      const exportData = {
+        businessInfo,
+        parties,
+        invoices,
+        products,
+        transactions,
+        timestamp: new Date().toISOString(),
+        appVersion: '1.0.0',
+      };
       
-    // Create a JSON blob with all the app data
-    const exportData = {
-      businessInfo,
-      parties,
-      invoices,
-      products,
-      transactions,
-      timestamp: new Date().toISOString(),
-      appVersion: '1.0.0',
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    // Create a temporary link and trigger download
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bizswift-backup-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    
-    // Clean up
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({
-      title: 'Backup Created',
-      description: 'Your business data has been exported successfully.',
-    });
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create a temporary link and trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bizswift-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Backup Created',
+        description: 'Your business data has been exported successfully.',
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: 'Export Failed',
+        description: 'An error occurred while exporting your data.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleBackupFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,7 +136,7 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleImportData = () => {
+  const handleImportData = async () => {
     if (!backupFile) {
       toast({
         title: 'Error',
@@ -134,57 +146,133 @@ const SettingsPage: React.FC = () => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (typeof event.target?.result === 'string') {
-          const importedData = JSON.parse(event.target.result);
-          
-          // Validate the imported data has the required structure
-          if (!importedData.businessInfo || !importedData.parties || !importedData.invoices) {
-            throw new Error('Invalid backup file format');
+    try {
+      setIsImporting(true);
+      const reader = new FileReader();
+      
+      reader.onload = async (event) => {
+        try {
+          if (typeof event.target?.result === 'string') {
+            const importedData = JSON.parse(event.target.result);
+            
+            // Validate the imported data has the required structure
+            if (!importedData.businessInfo || !importedData.parties || !importedData.invoices) {
+              throw new Error('Invalid backup file format');
+            }
+            
+            // Store the imported data in IndexedDB
+            const db = await openDB();
+            
+            // Import business info
+            if (importedData.businessInfo) {
+              const transaction = db.transaction(STORES.BUSINESS_INFO, 'readwrite');
+              const store = transaction.objectStore(STORES.BUSINESS_INFO);
+              store.clear();
+              store.add(importedData.businessInfo);
+              await new Promise<void>((resolve) => {
+                transaction.oncomplete = () => resolve();
+              });
+            }
+            
+            // Import parties
+            if (importedData.parties) {
+              const transaction = db.transaction(STORES.PARTIES, 'readwrite');
+              const store = transaction.objectStore(STORES.PARTIES);
+              store.clear();
+              for (const party of importedData.parties) {
+                store.add(party);
+              }
+              await new Promise<void>((resolve) => {
+                transaction.oncomplete = () => resolve();
+              });
+            }
+            
+            // Import invoices
+            if (importedData.invoices) {
+              const transaction = db.transaction(STORES.INVOICES, 'readwrite');
+              const store = transaction.objectStore(STORES.INVOICES);
+              store.clear();
+              for (const invoice of importedData.invoices) {
+                store.add(invoice);
+              }
+              await new Promise<void>((resolve) => {
+                transaction.oncomplete = () => resolve();
+              });
+            }
+            
+            // Import products
+            if (importedData.products) {
+              const transaction = db.transaction(STORES.PRODUCTS, 'readwrite');
+              const store = transaction.objectStore(STORES.PRODUCTS);
+              store.clear();
+              for (const product of importedData.products) {
+                store.add(product);
+              }
+              await new Promise<void>((resolve) => {
+                transaction.oncomplete = () => resolve();
+              });
+            }
+            
+            // Import transactions
+            if (importedData.transactions) {
+              const transaction = db.transaction(STORES.TRANSACTIONS, 'readwrite');
+              const store = transaction.objectStore(STORES.TRANSACTIONS);
+              store.clear();
+              for (const t of importedData.transactions) {
+                store.add(t);
+              }
+              await new Promise<void>((resolve) => {
+                transaction.oncomplete = () => resolve();
+              });
+            }
+            
+            db.close();
+            
+            // Refresh the app data
+            await refreshData();
+            
+            toast({
+              title: 'Import Successful',
+              description: 'Your business data has been imported successfully.',
+            });
           }
-          
-          // Store the imported data in localStorage
-          if (importedData.businessInfo) {
-            localStorage.setItem('bizswift_business_info', JSON.stringify(importedData.businessInfo));
-          }
-          
-          if (importedData.parties) {
-            localStorage.setItem('bizswift_parties', JSON.stringify(importedData.parties));
-          }
-          
-          if (importedData.invoices) {
-            localStorage.setItem('bizswift_invoices', JSON.stringify(importedData.invoices));
-          }
-          
-          if (importedData.products) {
-            localStorage.setItem('bizswift_products', JSON.stringify(importedData.products));
-          }
-          
-          if (importedData.transactions) {
-            localStorage.setItem('bizswift_transactions', JSON.stringify(importedData.transactions));
-          }
-          
-          // Refresh the page to load the imported data
-          window.location.reload();
-          
+        } catch (error) {
+          console.error('Import parsing error:', error);
           toast({
-            title: 'Import Successful',
-            description: 'Your business data has been imported successfully. The page will refresh.',
+            title: 'Import Failed',
+            description: 'The selected file is not a valid backup file.',
+            variant: 'destructive',
           });
+        } finally {
+          setIsImporting(false);
+          setBackupFile(null);
+          // Reset the file input
+          const fileInput = document.getElementById('backup-file') as HTMLInputElement;
+          if (fileInput) {
+            fileInput.value = '';
+          }
         }
-      } catch (error) {
+      };
+      
+      reader.onerror = () => {
+        setIsImporting(false);
         toast({
           title: 'Import Failed',
-          description: 'The selected file is not a valid backup file.',
+          description: 'Failed to read the backup file.',
           variant: 'destructive',
         });
-        console.error('Import error:', error);
-      }
-    };
-    
-    reader.readAsText(backupFile);
+      };
+      
+      reader.readAsText(backupFile);
+    } catch (error) {
+      console.error('Import error:', error);
+      setIsImporting(false);
+      toast({
+        title: 'Import Failed',
+        description: 'An error occurred while importing your data.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -213,9 +301,10 @@ const SettingsPage: React.FC = () => {
               <Button 
                 onClick={handleExportData}
                 className="w-full md:w-auto"
+                disabled={isExporting}
               >
                 <Download className="mr-2 h-4 w-4" />
-                Download Backup
+                {isExporting ? 'Exporting...' : 'Download Backup'}
               </Button>
             </div>
             
@@ -233,14 +322,15 @@ const SettingsPage: React.FC = () => {
                   type="file" 
                   accept=".json"
                   onChange={handleBackupFileChange}
+                  disabled={isImporting}
                 />
                 <Button 
                   onClick={handleImportData}
-                  disabled={!backupFile}
+                  disabled={!backupFile || isImporting}
                   className="w-full md:w-auto"
                 >
                   <Upload className="mr-2 h-4 w-4" />
-                  Restore Backup
+                  {isImporting ? 'Importing...' : 'Restore Backup'}
                 </Button>
               </div>
             </div>
