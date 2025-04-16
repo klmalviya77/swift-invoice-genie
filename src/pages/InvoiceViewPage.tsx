@@ -26,7 +26,7 @@ import {
   Download, 
   Check, 
   X, 
-  FilePdf,
+  FileText,
   ChevronDown
 } from 'lucide-react';
 import {
@@ -46,11 +46,21 @@ interface PaymentFormValues {
   reference?: string;
 }
 
+// Extended Invoice interface with the missing properties
+interface ExtendedInvoice extends Invoice {
+  companyName?: string;
+  companyAddress?: string;
+  companyGST?: string;
+  partyAddress?: string;
+  partyGST?: string;
+  notes?: string;
+}
+
 const InvoiceViewPage: React.FC = () => {
   const navigate = useNavigate();
   const { invoices, parties, getParty, getInvoiceRemainingBalance, recordPartialPayment, returns, loading, updateInvoice } = useApp();
   const { invoiceId } = useParams<{ invoiceId: string }>();
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [invoice, setInvoice] = useState<ExtendedInvoice | null>(null);
   const [partyName, setPartyName] = useState<string>('');
   const [partyType, setPartyType] = useState<'customer' | 'supplier' | ''>('');
   const [remainingAmount, setRemainingAmount] = useState<number>(0);
@@ -63,7 +73,8 @@ const InvoiceViewPage: React.FC = () => {
     
     const foundInvoice = invoices.find(inv => inv.id === invoiceId);
     if (foundInvoice) {
-      setInvoice(foundInvoice);
+      // Cast to ExtendedInvoice to handle the extra properties
+      setInvoice(foundInvoice as ExtendedInvoice);
       
       // Find related returns
       const invoiceReturns = returns.filter(ret => ret.invoiceId === invoiceId);
@@ -76,6 +87,12 @@ const InvoiceViewPage: React.FC = () => {
           if (party) {
             setPartyName(party.name);
             setPartyType(party.type);
+            
+            // Update invoice with party details if available
+            const extendedInvoice = {...foundInvoice} as ExtendedInvoice;
+            extendedInvoice.partyAddress = party.address;
+            extendedInvoice.partyGST = party.gst;
+            setInvoice(extendedInvoice);
           }
         }
       };
@@ -455,7 +472,7 @@ const InvoiceViewPage: React.FC = () => {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">
-                <FilePdf className="mr-2 h-4 w-4" /> Export <ChevronDown className="ml-2 h-4 w-4" />
+                <FileText className="mr-2 h-4 w-4" /> Export <ChevronDown className="ml-2 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
