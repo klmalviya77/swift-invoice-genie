@@ -1,19 +1,5 @@
-
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash, 
-  Package,
-  ArrowDown,
-  ArrowUp,
-  Tag,
-  FileText,
-  AlertTriangle,
-  Info
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, Edit, Trash, Package, ArrowDown, ArrowUp, Tag, AlertTriangle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -36,35 +22,24 @@ import {
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useApp } from '@/contexts/AppContext';
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetHeader, 
-  SheetTitle, 
-  SheetTrigger, 
-  SheetFooter, 
-  SheetClose 
-} from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetClose } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Product, 
-  generateQuickInvoice, 
-  getLowStockProducts,
-  getOutOfStockProducts,
-  getStockMovementHistory
-} from '@/lib/storage';
+import { Product, getStockMovementHistory, getProducts, getInvoiceById } from '@/lib/storage';
 
 const ProductsPage: React.FC = () => {
-  const { products, parties, saveProduct, removeProduct } = useApp();
+  const { products: appProducts, saveProduct, removeProduct } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const { toast } = useToast();
-  const navigate = useNavigate();
+
+  // Products fetched directly from storage
+  const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [productHistory, setProductHistory] = useState<Array<{ date: string; change: number; invoiceId: string; invoiceNumber: string }>>([]);
+  const [loading, setLoading] = useState(true);
 
   // Product form state
   const [formProduct, setFormProduct] = useState<Product>({
@@ -78,23 +53,93 @@ const ProductsPage: React.FC = () => {
     costPrice: 0
   });
 
-  // Quick invoice form state
-  const [quickInvoice, setQuickInvoice] = useState({
-    productId: '',
-    partyId: '',
-    quantity: 1,
-    discount: 0,
-    gstPercentage: 18,
-    status: 'unpaid' as 'paid' | 'unpaid'
-  });
+  // Fetch products data on component mount and when appProducts changes
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const allProducts = await getProducts();
+        setProducts(allProducts);
+        
+        // Apply current filters
+        filterProducts(allProducts);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [appProducts]);
 
-  // Stock adjustment form state
-  const [stockAdjustment, setStockAdjustment] = useState({
-    productId: '',
-    quantity: 0,
-    reason: '',
-    adjustmentType: 'increase' as 'increase' | 'decrease'
-  });
+  // Fetch product history when selectedProductId changes
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (selectedProductId) {
+        try {
+          const history = await getStockMovementHistory(selectedProductId);
+          setProductHistory(history);
+        } catch (error) {
+          console.error("Error fetching product history:", error);
+        }
+      }
+    };
+    
+    fetchHistory();
+  }, [selectedProductId]);
+
+  // Update filtered products when tab or search changes
+  useEffect(() => {
+    filterProducts(products);
+  }, [searchTerm, sortField, sortDirection, products]);
+
+  const fetchInvoiceNumber = async (invoiceId: string) => {
+    try {
+      const invoice = await getInvoiceById(invoiceId);
+      return invoice.invoiceNumber;
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      return "Unknown";
+    }
+  };
+
+  const filterProducts = (productList: Product[]) => {
+    let filtered = [...productList];
+    
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter((product) => {
+        return (
+          product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.price.toString().includes(searchTerm)
+        );
+      });
+    }
+    
+    // Apply sorting
+    const sorted = [...filtered].sort((a, b) => {
+      let compareA, compareB;
+      
+      if (sortField === 'price') {
+        compareA = a.price;
+        compareB = b.price;
+      } else if (sortField === 'stock') {
+        compareA = a.stock || 0;
+        compareB = b.stock || 0;
+      } else {
+        compareA = a[sortField as keyof typeof a];
+        compareB = b[sortField as keyof typeof b];
+      }
+      
+      if (compareA < compareB) return sortDirection === 'asc' ? -1 : 1;
+      if (compareA > compareB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    setFilteredProducts(sorted);
+  };
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -110,63 +155,27 @@ const ProductsPage: React.FC = () => {
     return sortDirection === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
-  // Filter products based on tab and search term
-  const getFilteredProducts = () => {
-    let filtered = [...products];
-    
-    // Apply tab filter
-    if (activeTab === "low-stock") {
-      filtered = getLowStockProducts();
-    } else if (activeTab === "out-of-stock") {
-      filtered = getOutOfStockProducts();
-    }
-    
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter((product) => {
-        return (
-          product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.price.toString().includes(searchTerm)
-        );
-      });
-    }
-    
-    return filtered;
-  };
-
-  const filteredProducts = getFilteredProducts();
-
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    let compareA, compareB;
-    
-    if (sortField === 'price') {
-      compareA = a.price;
-      compareB = b.price;
-    } else if (sortField === 'stock') {
-      compareA = a.stock || 0;
-      compareB = b.stock || 0;
-    } else {
-      compareA = a[sortField as keyof typeof a];
-      compareB = b[sortField as keyof typeof b];
-    }
-    
-    if (compareA < compareB) return sortDirection === 'asc' ? -1 : 1;
-    if (compareA > compareB) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  const handleDeleteProduct = (id: string) => {
-    removeProduct(id);
+  const handleDeleteProduct = async (id: string) => {
+    await removeProduct(id);
     setConfirmDelete(null);
+    // Refresh products
+    const updatedProducts = await getProducts();
+    setProducts(updatedProducts);
+    filterProducts(updatedProducts);
+    
     toast({
       title: 'Product Deleted',
       description: 'The product has been deleted successfully.',
     });
   };
 
-  const handleSaveProduct = () => {
-    saveProduct(formProduct);
+  const handleSaveProduct = async () => {
+    await saveProduct(formProduct);
+    // Refresh products
+    const updatedProducts = await getProducts();
+    setProducts(updatedProducts);
+    filterProducts(updatedProducts);
+    
     setFormProduct({
       id: '',
       name: '',
@@ -177,6 +186,7 @@ const ProductsPage: React.FC = () => {
       lowStockAlert: 5,
       costPrice: 0
     });
+    
     toast({
       title: 'Product Saved',
       description: 'The product has been saved successfully.',
@@ -187,103 +197,23 @@ const ProductsPage: React.FC = () => {
     setFormProduct({ ...product });
   };
 
-  const handleGenerateInvoice = () => {
-    try {
-      const newInvoice = generateQuickInvoice(
-        quickInvoice.partyId,
-        quickInvoice.productId,
-        quickInvoice.quantity,
-        quickInvoice.discount,
-        quickInvoice.gstPercentage,
-        quickInvoice.status
-      );
-      
-      toast({
-        title: 'Invoice Created',
-        description: `Invoice ${newInvoice.invoiceNumber} has been created successfully.`,
-      });
-      
-      // Navigate to the invoice view
-      navigate(`/invoices/${newInvoice.id}`);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create invoice',
-        variant: 'destructive'
-      });
-    }
-  };
-
-  const handleStockAdjustment = () => {
-    if (!stockAdjustment.productId) {
-      toast({
-        title: 'Error',
-        description: 'Please select a product',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const product = products.find(p => p.id === stockAdjustment.productId);
-    if (!product) {
-      toast({
-        title: 'Error',
-        description: 'Product not found',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const adjustmentValue = stockAdjustment.adjustmentType === 'increase' 
-      ? stockAdjustment.quantity 
-      : -stockAdjustment.quantity;
-
-    const updatedProduct = {
-      ...product,
-      stock: product.stock + adjustmentValue
-    };
-
-    saveProduct(updatedProduct);
-    
-    toast({
-      title: 'Stock Updated',
-      description: `${product.name} stock has been ${stockAdjustment.adjustmentType}d by ${stockAdjustment.quantity} ${product.unit}.`,
-    });
-
-    // Reset form
-    setStockAdjustment({
-      productId: '',
-      quantity: 0,
-      reason: '',
-      adjustmentType: 'increase'
-    });
-  };
-
-  // Get stock status badge
   const getStockStatusBadge = (product: Product) => {
-    const threshold = product.lowStockAlert || 5;
-    
     if (product.stock <= 0) {
       return <Badge variant="destructive">Out of Stock</Badge>;
-    } else if (product.stock <= threshold) {
+    } else if (product.stock <= (product.lowStockAlert || 5)) {
       return <Badge variant="outline" className="bg-yellow-100 text-yellow-800">Low Stock</Badge>;
     }
     return <Badge variant="outline" className="bg-green-100 text-green-800">In Stock</Badge>;
-  };
-
-  // Get product stock movement history
-  const getProductHistory = (productId: string) => {
-    return getStockMovementHistory(productId);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Products & Inventory</h1>
-          <p className="text-muted-foreground">Manage your product inventory</p>
+          <h1 className="text-3xl font-bold tracking-tight">Products Management</h1>
+          <p className="text-muted-foreground">Manage your products and their details</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Sheet>
             <SheetTrigger asChild>
               <Button>
@@ -324,7 +254,7 @@ const ProductsPage: React.FC = () => {
                       onChange={(e) => setFormProduct({...formProduct, price: parseFloat(e.target.value) || 0})}
                     />
                   </div>
-                  <div className="grid gap-2">
+                   <div className="grid gap-2">
                     <Label htmlFor="costPrice">Cost Price</Label>
                     <Input 
                       id="costPrice" 
@@ -366,7 +296,7 @@ const ProductsPage: React.FC = () => {
                     placeholder="pcs, kg, ltr, etc."
                   />
                 </div>
-                <div className="grid gap-2">
+                 <div className="grid gap-2">
                   <Label htmlFor="hsn">HSN Code</Label>
                   <Input 
                     id="hsn" 
@@ -386,235 +316,21 @@ const ProductsPage: React.FC = () => {
               </SheetFooter>
             </SheetContent>
           </Sheet>
-
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="outline">
-                <FileText className="mr-2 h-4 w-4" /> Quick Invoice
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="sm:max-w-md">
-              <SheetHeader>
-                <SheetTitle>Generate Quick Invoice</SheetTitle>
-              </SheetHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="party">Select Customer</Label>
-                  <select 
-                    id="party"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                    value={quickInvoice.partyId}
-                    onChange={(e) => setQuickInvoice({...quickInvoice, partyId: e.target.value})}
-                  >
-                    <option value="">Select a customer</option>
-                    {parties
-                      .filter(party => party.type === 'customer')
-                      .map(party => (
-                        <option key={party.id} value={party.id}>{party.name}</option>
-                      ))
-                    }
-                  </select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="product">Select Product</Label>
-                  <select 
-                    id="product"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                    value={quickInvoice.productId}
-                    onChange={(e) => setQuickInvoice({...quickInvoice, productId: e.target.value})}
-                  >
-                    <option value="">Select a product</option>
-                    {products.map(product => (
-                      <option key={product.id} value={product.id} disabled={product.stock <= 0}>
-                        {product.name} - ₹{product.price} {product.stock <= 0 ? '(Out of Stock)' : `(${product.stock} ${product.unit} available)`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <Input 
-                      id="quantity" 
-                      type="number"
-                      min="1"
-                      value={quickInvoice.quantity}
-                      onChange={(e) => setQuickInvoice({...quickInvoice, quantity: parseInt(e.target.value) || 1})}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="discount">Discount</Label>
-                    <Input 
-                      id="discount" 
-                      type="number"
-                      min="0"
-                      value={quickInvoice.discount}
-                      onChange={(e) => setQuickInvoice({...quickInvoice, discount: parseFloat(e.target.value) || 0})}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="gst">GST %</Label>
-                    <Input 
-                      id="gst" 
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={quickInvoice.gstPercentage}
-                      onChange={(e) => setQuickInvoice({...quickInvoice, gstPercentage: parseFloat(e.target.value) || 0})}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="status">Status</Label>
-                    <select 
-                      id="status"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                      value={quickInvoice.status}
-                      onChange={(e) => setQuickInvoice({...quickInvoice, status: e.target.value as 'paid' | 'unpaid'})}
-                    >
-                      <option value="unpaid">Unpaid</option>
-                      <option value="paid">Paid</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-              <SheetFooter>
-                <SheetClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </SheetClose>
-                <SheetClose asChild>
-                  <Button 
-                    onClick={handleGenerateInvoice}
-                    disabled={!quickInvoice.partyId || !quickInvoice.productId || quickInvoice.quantity < 1}
-                  >
-                    Generate Invoice
-                  </Button>
-                </SheetClose>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="secondary">
-                <Package className="mr-2 h-4 w-4" /> Adjust Stock
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="sm:max-w-md">
-              <SheetHeader>
-                <SheetTitle>Adjust Stock</SheetTitle>
-              </SheetHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="stockProduct">Select Product</Label>
-                  <select 
-                    id="stockProduct"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                    value={stockAdjustment.productId}
-                    onChange={(e) => setStockAdjustment({...stockAdjustment, productId: e.target.value})}
-                  >
-                    <option value="">Select a product</option>
-                    {products.map(product => (
-                      <option key={product.id} value={product.id}>
-                        {product.name} (Current Stock: {product.stock} {product.unit})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="adjustmentType">Adjustment Type</Label>
-                    <select 
-                      id="adjustmentType"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                      value={stockAdjustment.adjustmentType}
-                      onChange={(e) => setStockAdjustment({...stockAdjustment, adjustmentType: e.target.value as 'increase' | 'decrease'})}
-                    >
-                      <option value="increase">Increase</option>
-                      <option value="decrease">Decrease</option>
-                    </select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="adjustQuantity">Quantity</Label>
-                    <Input 
-                      id="adjustQuantity" 
-                      type="number"
-                      min="1"
-                      value={stockAdjustment.quantity}
-                      onChange={(e) => setStockAdjustment({...stockAdjustment, quantity: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="reason">Reason for Adjustment</Label>
-                  <Input 
-                    id="reason" 
-                    value={stockAdjustment.reason}
-                    onChange={(e) => setStockAdjustment({...stockAdjustment, reason: e.target.value})}
-                    placeholder="Enter reason for adjustment"
-                  />
-                </div>
-              </div>
-              <SheetFooter>
-                <SheetClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </SheetClose>
-                <SheetClose asChild>
-                  <Button 
-                    onClick={handleStockAdjustment}
-                    disabled={!stockAdjustment.productId || stockAdjustment.quantity <= 0}
-                  >
-                    Apply Stock Adjustment
-                  </Button>
-                </SheetClose>
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search products..."
-            className="pl-8"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        
-        <Tabs 
-          defaultValue="all" 
-          value={activeTab} 
-          onValueChange={setActiveTab}
-          className="w-full md:w-auto"
-        >
-          <TabsList className="grid grid-cols-3 w-full">
-            <TabsTrigger value="all">All Products</TabsTrigger>
-            <TabsTrigger value="low-stock">
-              Low Stock 
-              {getLowStockProducts().length > 0 && (
-                <Badge variant="outline" className="ml-2 bg-yellow-100 text-yellow-800">
-                  {getLowStockProducts().length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="out-of-stock">
-              Out of Stock
-              {getOutOfStockProducts().length > 0 && (
-                <Badge variant="destructive" className="ml-2">
-                  {getOutOfStockProducts().length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="relative flex items-center">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="Search products..."
+          className="pl-8"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
       </div>
 
-      {sortedProducts.length === 0 ? (
+      {filteredProducts.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <Package className="h-6 w-6 text-muted-foreground" />
@@ -623,9 +339,7 @@ const ProductsPage: React.FC = () => {
           <p className="text-muted-foreground mt-2">
             {searchTerm
               ? 'Try adjusting your search terms'
-              : activeTab !== 'all'
-                ? `No products with ${activeTab === 'low-stock' ? 'low stock' : 'out of stock'} status`
-                : 'Get started by adding your first product'}
+              : 'Get started by adding your first product'}
           </p>
           <Sheet>
             <SheetTrigger asChild>
@@ -738,7 +452,7 @@ const ProductsPage: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedProducts.map((product) => (
+              {filteredProducts.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell className="font-medium">{product.name}</TableCell>
                   <TableCell>{product.description}</TableCell>
@@ -762,7 +476,7 @@ const ProductsPage: React.FC = () => {
                             <DialogTitle>Stock History: {product.name}</DialogTitle>
                           </DialogHeader>
                           <div className="mt-4 max-h-80 overflow-auto">
-                            {selectedProductId && getProductHistory(selectedProductId).length > 0 ? (
+                            {productHistory.length > 0 ? (
                               <div className="space-y-4">
                                 <div className="grid grid-cols-4 font-semibold text-sm border-b pb-2">
                                   <div>Date</div>
@@ -770,7 +484,7 @@ const ProductsPage: React.FC = () => {
                                   <div className="text-right">Change</div>
                                   <div className="text-right">Type</div>
                                 </div>
-                                {getProductHistory(selectedProductId).map((entry, index) => (
+                                {productHistory.map((entry, index) => (
                                   <div key={index} className="grid grid-cols-4 text-sm">
                                     <div>{new Date(entry.date).toLocaleDateString()}</div>
                                     <div>{entry.invoiceNumber}</div>

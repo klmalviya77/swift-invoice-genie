@@ -9,16 +9,24 @@ import { getLowStockProducts, getOutOfStockProducts } from '@/lib/storage';
 const InventoryNavItem: React.FC = () => {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [outOfStockCount, setOutOfStockCount] = useState(0);
+  const [loading, setLoading] = useState(true);
   
   useEffect(() => {
     const fetchCounts = async () => {
-      const [lowStock, outOfStock] = await Promise.all([
-        getLowStockProducts(),
-        getOutOfStockProducts()
-      ]);
-      
-      setLowStockCount(lowStock.length);
-      setOutOfStockCount(outOfStock.length);
+      try {
+        setLoading(true);
+        const [lowStock, outOfStock] = await Promise.all([
+          getLowStockProducts(),
+          getOutOfStockProducts()
+        ]);
+        
+        setLowStockCount(lowStock.length);
+        setOutOfStockCount(outOfStock.length);
+      } catch (error) {
+        console.error("Error fetching inventory counts:", error);
+      } finally {
+        setLoading(false);
+      }
     };
     
     fetchCounts();
@@ -38,7 +46,7 @@ const InventoryNavItem: React.FC = () => {
     >
       <Package className="mr-2 h-4 w-4" />
       <span className="flex-1">Inventory</span>
-      {hasAlerts && (
+      {!loading && hasAlerts && (
         <Badge variant="outline" className="ml-auto bg-yellow-100 text-yellow-800 flex items-center">
           <AlertTriangle className="h-3 w-3 mr-1" />
           {outOfStockCount + lowStockCount}
