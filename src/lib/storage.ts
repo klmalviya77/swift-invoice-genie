@@ -1,4 +1,3 @@
-
 // Types for our data
 export interface Party {
   id: string;
@@ -73,6 +72,34 @@ export interface BusinessInfo {
   email: string;
   gst?: string;
   termsAndConditions: string;
+}
+
+export interface ReturnItem {
+  id: string;
+  productId: string;
+  product: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  reason?: string;
+  hsn?: string;
+}
+
+export interface Return {
+  id: string;
+  returnNumber: string;
+  date: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  partyId: string;
+  items: ReturnItem[];
+  subtotal: number;
+  gstPercentage: number;
+  gstAmount: number;
+  total: number;
+  status: 'pending' | 'processed' | 'rejected';
+  notes?: string;
+  type: 'purchase' | 'sales';
 }
 
 // Default business info
@@ -492,4 +519,113 @@ export const updateInvoicePaymentStatus = async (invoice: Invoice): Promise<Invo
   }
   
   return await saveInvoice(updatedInvoice);
+};
+
+// Returns functions
+export const getReturns = async (): Promise<Return[]> => {
+  await initializeDB();
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.RETURNS, 'readonly');
+      const store = transaction.objectStore(STORES.RETURNS);
+      const request = store.getAll();
+      
+      request.onsuccess = () => {
+        resolve(request.result || []);
+      };
+      
+      request.onerror = () => {
+        console.error('Error getting returns:', request.error);
+        reject(request.error);
+      };
+      
+      transaction.oncomplete = () => {
+        db.close();
+      };
+    });
+  } catch (error) {
+    console.error('Failed to get returns:', error);
+    return [];
+  }
+};
+
+export const saveReturn = async (returnData: Return): Promise<Return> => {
+  await initializeDB();
+  
+  if (!returnData.id) {
+    returnData.id = crypto.randomUUID();
+  }
+  
+  if (!returnData.returnNumber) {
+    returnData.returnNumber = await generateReturnNumber(returnData.type);
+  }
+  
+  // Process inventory adjustment based on return type
+  if (returnData.status === 'processed') {
+    for (const item of returnData.items) {
+      if (item.productId) {
+        // For purchase return, we're returning products to supplier, so decrease stock
+        // For sales return, we're getting products back from customer, so increase stock
+        const quantityChange = returnData.type === 'purchase' ? -item.qty : item.qty;
+        await adjustProductStock(item.productId, quantityChange);
+      }
+    }
+  }
+  
+  await saveItem<Return>(STORES.RETURNS, returnData);
+  return returnData;
+};
+
+export const deleteReturn = async (id: string): Promise<void> => {
+  await initializeDB();
+  await deleteItem(STORES.RETURNS, id);
+};
+
+export const getReturnById = async (id: string): Promise<Return | undefined> => {
+  await initializeDB();
+  return await getItemById<Return>(STORES.RETURNS, id);
+};
+
+export const getReturnsByType = async (type: 'purchase' | 'sales'): Promise<Return[]> => {
+  await initializeDB();
+  const returns = await getReturns();
+  return returns.filter(returnData => returnData.type === type);
+};
+
+export const getReturnsByPartyId = async (partyId: string): Promise<Return[]> => {
+  await initializeDB();
+  const returns = await getReturns();
+  return returns.filter(returnData => returnData.partyId === partyId);
+};
+
+export const getReturnsByInvoiceId = async (invoiceId: string): Promise<Return[]> => {
+  await initializeDB();
+  const returns = await getReturns();
+  return returns.filter(returnData => returnData.invoiceId === invoiceId);
+};
+
+export const generateReturnNumber = async (type: 'purchase' | 'sales'): Promise<string> => {
+  await initializeDB();
+  const returns = await getReturns();
+  const date = new Date();
+  const year = date.getFullYear().toString().substring(2);
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  
+  const prefix = type === 'purchase' ? 'PR-' : 'SR-';
+  const monthPrefix = `${prefix}${year}${month}-`;
+  
+  const monthReturns = returns.filter(ret => ret.returnNumber.startsWith(monthPrefix));
+  
+  let maxNumber = 0;
+  monthReturns.forEach(ret => {
+    const numberPart = ret.returnNumber.split('-')[2];
+    const number = parseInt(numberPart);
+    if (!isNaN(number) && number > maxNumber) {
+      maxNumber = number;
+    }
+  });
+  
+  const nextNumber = maxNumber + 1;
+  return `${monthPrefix}${nextNumber.toString().padStart(3, '0')}`;
 };

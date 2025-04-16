@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { 
@@ -15,7 +16,9 @@ import {
   Bell,
   Receipt,
   FileInput,
-  Wallet
+  Wallet,
+  RotateCcw,
+  PackageOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -42,6 +45,12 @@ const Dashboard: React.FC = () => {
     { name: 'Party Management', path: '/parties', icon: Users },
     { name: 'Invoice & Billing', path: '/invoices', icon: FileText },
     { name: 'Purchase Invoice', path: '/purchase-invoices', icon: Receipt },
+    { name: 'Returns', icon: RotateCcw, 
+      submenu: [
+        { name: 'Purchase Returns', path: '/purchase-returns', icon: PackageOpen },
+        { name: 'Sales Returns', path: '/sales-returns', icon: PackageOpen }
+      ] 
+    },
     { name: 'Inventory', path: '/inventory', icon: Package },
     { name: 'Money Transaction', path: '/transactions', icon: Wallet, 
       submenu: [
@@ -123,22 +132,27 @@ const Dashboard: React.FC = () => {
                 (item.path !== '/' && location.pathname.startsWith(item.path));
               
               if (item.submenu) {
+                // Check if any submenu item is active
+                const isSubMenuActive = item.submenu.some(
+                  subItem => location.pathname.startsWith(subItem.path)
+                );
+                
                 return (
                   <div key={item.name}>
                     <div
                       className={cn(
                         "flex items-center px-4 py-3 text-sm font-medium",
-                        isActive
+                        isSubMenuActive
                           ? "bg-gray-100 text-primary"
                           : "text-gray-600 hover:bg-gray-50"
                       )}
                     >
-                      <item.icon className={cn("mr-3 h-5 w-5", isActive ? "text-primary" : "text-gray-400")} />
+                      <item.icon className={cn("mr-3 h-5 w-5", isSubMenuActive ? "text-primary" : "text-gray-400")} />
                       {item.name}
                     </div>
                     <div className="pl-4">
                       {item.submenu.map((subItem) => {
-                        const isSubActive = location.pathname === subItem.path;
+                        const isSubActive = location.pathname.startsWith(subItem.path);
                         return (
                           <Link
                             key={subItem.name}

@@ -20,6 +20,11 @@ import TransactionsPage from "@/pages/TransactionsPage";
 import PaymentPage from "@/pages/PaymentPage";
 import ReceiptPage from "@/pages/ReceiptPage";
 import InventoryPage from "@/pages/InventoryPage";
+import PurchaseReturnsListPage from "@/pages/PurchaseReturnsListPage";
+import SalesReturnsListPage from "@/pages/SalesReturnsListPage";
+import PurchaseReturnPage from "@/pages/PurchaseReturnPage";
+import SalesReturnPage from "@/pages/SalesReturnPage";
+import ReturnDetailsPage from "@/pages/ReturnDetailsPage";
 
 const queryClient = new QueryClient();
 
@@ -46,6 +51,12 @@ const App = () => (
                 <Route path="payment" element={<PaymentPage />} />
                 <Route path="receipt" element={<ReceiptPage />} />
               </Route>
+              <Route path="purchase-returns" element={<PurchaseReturnsListPage />} />
+              <Route path="purchase-returns/new" element={<PurchaseReturnPage />} />
+              <Route path="purchase-returns/:returnId" element={<ReturnDetailsPage />} />
+              <Route path="sales-returns" element={<SalesReturnsListPage />} />
+              <Route path="sales-returns/new" element={<SalesReturnPage />} />
+              <Route path="sales-returns/:returnId" element={<ReturnDetailsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>

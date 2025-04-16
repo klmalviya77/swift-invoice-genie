@@ -1,11 +1,10 @@
-
 /**
  * IndexedDB utility for data storage
  */
 
 // Define the database name and version
 const DB_NAME = 'bizswift_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Define the object stores (tables)
 const STORES = {
@@ -13,48 +12,48 @@ const STORES = {
   INVOICES: 'invoices',
   PRODUCTS: 'products',
   TRANSACTIONS: 'transactions',
-  BUSINESS_INFO: 'business_info'
+  BUSINESS_INFO: 'businessInfo',
+  RETURNS: 'returns'
 };
 
 // Helper to open the database connection
-export const openDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
-    request.onerror = (event) => {
-      console.error('IndexedDB error:', request.error);
-      reject(request.error);
-    };
-    
-    request.onsuccess = (event) => {
-      resolve(request.result);
-    };
+export const openDB = async () => {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('bizswift-db', 2); // Increment version to trigger upgrade
     
     request.onupgradeneeded = (event) => {
       const db = request.result;
-      
-      // Create object stores if they don't exist
-      if (!db.objectStoreNames.contains(STORES.PARTIES)) {
-        db.createObjectStore(STORES.PARTIES, { keyPath: 'id' });
+      const oldVersion = event.oldVersion;
+
+      // Create stores if they don't exist
+      if (oldVersion < 1) {
+        if (!db.objectStoreNames.contains(STORES.PARTIES)) {
+          db.createObjectStore(STORES.PARTIES, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.INVOICES)) {
+          db.createObjectStore(STORES.INVOICES, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.PRODUCTS)) {
+          db.createObjectStore(STORES.PRODUCTS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.TRANSACTIONS)) {
+          db.createObjectStore(STORES.TRANSACTIONS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORES.BUSINESS_INFO)) {
+          db.createObjectStore(STORES.BUSINESS_INFO, { keyPath: 'name' });
+        }
       }
       
-      if (!db.objectStoreNames.contains(STORES.INVOICES)) {
-        db.createObjectStore(STORES.INVOICES, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(STORES.PRODUCTS)) {
-        db.createObjectStore(STORES.PRODUCTS, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(STORES.TRANSACTIONS)) {
-        db.createObjectStore(STORES.TRANSACTIONS, { keyPath: 'id' });
-      }
-      
-      if (!db.objectStoreNames.contains(STORES.BUSINESS_INFO)) {
-        // Use 'name' as the keyPath for BusinessInfo
-        const businessInfoStore = db.createObjectStore(STORES.BUSINESS_INFO, { keyPath: 'name' });
+      // Add returns store in version 2
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains(STORES.RETURNS)) {
+          db.createObjectStore(STORES.RETURNS, { keyPath: 'id' });
+        }
       }
     };
+    
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
 };
 

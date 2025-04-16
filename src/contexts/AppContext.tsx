@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import {
   Party,
@@ -6,6 +5,8 @@ import {
   BusinessInfo,
   Product,
   Transaction,
+  Return,
+  ReturnItem,
   getParties,
   saveParty,
   deleteParty,
@@ -29,7 +30,13 @@ import {
   updateInvoicePaymentStatus,
   getLowStockProducts,
   getOutOfStockProducts,
-  adjustProductStock
+  adjustProductStock,
+  getReturns,
+  saveReturn as saveReturnToStorage,
+  deleteReturn,
+  getReturnsByType,
+  getReturnsByPartyId,
+  getReturnById
 } from '@/lib/storage';
 
 interface AppContextType {
@@ -37,6 +44,7 @@ interface AppContextType {
   invoices: Invoice[];
   products: Product[];
   transactions: Transaction[];
+  returns: Return[];
   businessInfo: BusinessInfo;
   loading: boolean;
   addParty: (party: Party) => Promise<void>;
@@ -61,6 +69,12 @@ interface AppContextType {
   adjustStock: (productId: string, quantity: number) => Promise<boolean>;
   getLowStock: () => Promise<Product[]>;
   getOutOfStock: () => Promise<Product[]>;
+  // Return-related functions
+  saveReturn: (returnData: Return) => Promise<Return>;
+  removeReturn: (id: string) => Promise<void>;
+  getReturnsByInvoice: (invoiceId: string) => Promise<Return[]>;
+  getReturn: (id: string) => Promise<Return | undefined>;
+  getReturnsByParty: (partyId: string) => Promise<Return[]>;
   refreshData: () => Promise<void>;
 }
 
@@ -80,20 +94,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [returns, setReturns] = useState<Return[]>([]);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(defaultBusinessInfo);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Load initial data
   const refreshData = async () => {
     try {
       setLoading(true);
       
-      const [newParties, newInvoices, newProducts, newTransactions, newBusinessInfo] = await Promise.all([
+      const [newParties, newInvoices, newProducts, newTransactions, newBusinessInfo, newReturns] = await Promise.all([
         getParties(),
         getInvoices(),
         getProducts(),
         getTransactions(),
-        getBusinessInfo()
+        getBusinessInfo(),
+        getReturns()
       ]);
       
       setParties(newParties);
@@ -101,6 +116,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setProducts(newProducts);
       setTransactions(newTransactions);
       setBusinessInfo(newBusinessInfo);
+      setReturns(newReturns);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -132,7 +148,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const addInvoice = async (invoice: Invoice) => {
     const savedInvoice = await saveInvoice(invoice);
-    // Refresh invoices and products as stock might have changed
     const [newInvoices, newProducts] = await Promise.all([
       getInvoices(),
       getProducts()
@@ -171,9 +186,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newTransactions = await getTransactions();
     setTransactions(newTransactions);
     
-    // Automatically update invoice status when a new transaction is created
     if (transaction.invoiceId) {
-      // If transaction is for a specific invoice
       const invoice = await getInvoiceById(transaction.invoiceId);
       if (invoice) {
         await updateInvoicePaymentStatus(invoice);
@@ -181,7 +194,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setInvoices(newInvoices);
       }
     } else {
-      // If transaction is general (not for a specific invoice)
       await updateInvoiceStatusFromTransaction(transaction.partyId, transaction.amount);
     }
   };
@@ -192,7 +204,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newTransactions = await getTransactions();
     setTransactions(newTransactions);
     
-    // If transaction was linked to an invoice, update invoice status
     if (transaction?.invoiceId) {
       const invoice = await getInvoiceById(transaction.invoiceId);
       if (invoice) {
@@ -228,12 +239,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return await getInvoiceRemainingAmount(invoiceId);
   };
 
-  // Function to record a partial payment for an invoice
   const recordPartialPayment = async (invoiceId: string, amount: number, paymentDetails: Partial<Transaction>) => {
     const invoice = await getInvoiceById(invoiceId);
     if (!invoice) return;
     
-    // Create and save the transaction
     const transaction: Transaction = {
       id: crypto.randomUUID(),
       type: invoice.partyId ? (
@@ -254,16 +263,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newTransactions = await getTransactions();
     setTransactions(newTransactions);
     
-    // Update the invoice
     const updatedInvoice = await updateInvoicePaymentStatus(invoice);
     const newInvoices = await getInvoices();
     setInvoices(newInvoices);
   };
 
-  // Updated function: Updates invoice status based on transactions
   const updateInvoiceStatusFromTransaction = async (partyId: string, amount: number, invoiceId?: string) => {
     if (invoiceId) {
-      // If a specific invoice is provided, just update that one
       const invoice = await getInvoiceById(invoiceId);
       if (invoice) {
         await updateInvoicePaymentStatus(invoice);
@@ -273,7 +279,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return;
     }
     
-    // Get all unpaid or partially paid invoices for this party
     const allInvoices = await getInvoices();
     const partyInvoices = allInvoices
       .filter(inv => inv.partyId === partyId && (inv.status === 'unpaid' || inv.status === 'partial'))
@@ -284,18 +289,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     let remainingAmount = amount;
     const updatedInvoices = [];
 
-    // Try to mark invoices as paid or partially paid, starting from the oldest
     for (const invoice of partyInvoices) {
       const remainingInvoiceAmount = invoice.total - invoice.paidAmount;
       
       if (remainingAmount >= remainingInvoiceAmount) {
-        // Can pay this invoice completely
         invoice.paidAmount = invoice.total;
         invoice.status = 'paid';
         remainingAmount -= remainingInvoiceAmount;
         updatedInvoices.push(invoice);
       } else if (remainingAmount > 0) {
-        // Can only partially pay this invoice
         invoice.paidAmount += remainingAmount;
         invoice.status = 'partial';
         updatedInvoices.push(invoice);
@@ -306,19 +308,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }
 
-    // Save the updated invoices
     for (const invoice of updatedInvoices) {
       await saveInvoice(invoice);
     }
 
-    // Refresh invoices in state if any were updated
     if (updatedInvoices.length > 0) {
       const newInvoices = await getInvoices();
       setInvoices(newInvoices);
     }
   };
 
-  // Inventory management functions
   const adjustStock = async (productId: string, quantity: number): Promise<boolean> => {
     const result = await adjustProductStock(productId, quantity);
     if (result) {
@@ -336,6 +335,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return await getOutOfStockProducts();
   };
 
+  const saveReturn = async (returnData: Return): Promise<Return> => {
+    const savedReturn = await saveReturnToStorage(returnData);
+    const newReturns = await getReturns();
+    setReturns(newReturns);
+    
+    if (returnData.status === 'processed') {
+      const newProducts = await getProducts();
+      setProducts(newProducts);
+    }
+    
+    return savedReturn;
+  };
+
+  const removeReturn = async (id: string): Promise<void> => {
+    await deleteReturn(id);
+    const newReturns = await getReturns();
+    setReturns(newReturns);
+  };
+
+  const getReturnsByInvoice = async (invoiceId: string): Promise<Return[]> => {
+    return returns.filter(ret => ret.invoiceId === invoiceId);
+  };
+
+  const getReturn = async (id: string): Promise<Return | undefined> => {
+    return await getReturnById(id);
+  };
+
+  const getReturnsByParty = async (partyId: string): Promise<Return[]> => {
+    return await getReturnsByPartyId(partyId);
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -343,6 +373,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         invoices,
         products,
         transactions,
+        returns,
         businessInfo,
         loading,
         addParty,
@@ -363,10 +394,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         getInvoiceRemainingBalance,
         updateInvoiceStatusFromTransaction,
         recordPartialPayment,
-        // Inventory functions
         adjustStock,
         getLowStock,
         getOutOfStock,
+        saveReturn,
+        removeReturn,
+        getReturnsByInvoice,
+        getReturn,
+        getReturnsByParty,
         refreshData
       }}
     >

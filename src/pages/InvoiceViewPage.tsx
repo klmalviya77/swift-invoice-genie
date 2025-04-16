@@ -1,587 +1,466 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, 
-  Printer, 
-  Download, 
-  Phone, 
-  Mail, 
-  Edit,
-  CreditCard,
-  IndianRupee
-} from 'lucide-react';
-import html2pdf from 'html2pdf.js';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useApp } from '@/contexts/AppContext';
-import { useToast } from '@/components/ui/use-toast';
-import { 
-  Table, 
-  TableHeader, 
-  TableBody, 
-  TableRow, 
-  TableHead, 
-  TableCell 
-} from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Invoice, Return } from '@/lib/storage';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Invoice, Party, Transaction } from '@/lib/storage';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useForm } from 'react-hook-form';
+import { toast } from '@/hooks/use-toast';
+import { ArrowLeft, AlertCircle, CreditCard, Printer, ArrowRight, RotateCcw } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+interface PaymentFormValues {
+  amount: number;
+  mode: 'cash' | 'bank_transfer' | 'upi' | 'cheque';
+  description?: string;
+  reference?: string;
+}
 
 const InvoiceViewPage: React.FC = () => {
-  const { invoiceId } = useParams();
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const { 
-    getInvoice, 
-    getParty, 
-    businessInfo, 
-    updateInvoice, 
-    getTransactionsByInvoice,
-    getInvoiceRemainingBalance,
-    recordPartialPayment
-  } = useApp();
-  const printRef = useRef<HTMLDivElement>(null);
-  
-  const [isPartialPaymentOpen, setIsPartialPaymentOpen] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'bank_transfer' | 'upi' | 'cheque'>('cash');
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentDescription, setPaymentDescription] = useState('');
-  
+  const { invoices, parties, getParty, getInvoiceRemainingBalance, recordPartialPayment, returns, loading } = useApp();
+  const { invoiceId } = useParams<{ invoiceId: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [party, setParty] = useState<Party | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [remainingBalance, setRemainingBalance] = useState<number>(0);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!invoiceId) return;
-      
-      try {
-        const invoiceData = await getInvoice(invoiceId);
-        if (!invoiceData) {
-          return;
-        }
-        
-        setInvoice(invoiceData);
-        
-        if (invoiceData.partyId) {
-          const partyData = await getParty(invoiceData.partyId);
-          setParty(partyData || null);
-        }
-        
-        const transactionsData = await getTransactionsByInvoice(invoiceId);
-        setTransactions(transactionsData);
-        
-        const balance = await getInvoiceRemainingBalance(invoiceId);
-        setRemainingBalance(balance);
-      } catch (error) {
-        console.error("Error fetching invoice data:", error);
-      }
-    };
-    
-    fetchData();
-  }, [invoiceId, getInvoice, getParty, getTransactionsByInvoice, getInvoiceRemainingBalance]);
+  const [partyName, setPartyName] = useState<string>('');
+  const [partyType, setPartyType] = useState<'customer' | 'supplier' | ''>('');
+  const [remainingAmount, setRemainingAmount] = useState<number>(0);
+  const [relatedReturns, setRelatedReturns] = useState<Return[]>([]);
   
-  if (!invoice || !party) {
+  // Get invoice details
+  useEffect(() => {
+    if (!invoiceId) return;
+    
+    const foundInvoice = invoices.find(inv => inv.id === invoiceId);
+    if (foundInvoice) {
+      setInvoice(foundInvoice);
+      
+      // Find related returns
+      const invoiceReturns = returns.filter(ret => ret.invoiceId === invoiceId);
+      setRelatedReturns(invoiceReturns);
+      
+      // Get party details
+      const loadPartyDetails = async () => {
+        if (foundInvoice.partyId) {
+          const party = await getParty(foundInvoice.partyId);
+          if (party) {
+            setPartyName(party.name);
+            setPartyType(party.type);
+          }
+        }
+      };
+      
+      // Get remaining balance
+      const loadRemainingBalance = async () => {
+        const balance = await getInvoiceRemainingBalance(foundInvoice.id);
+        setRemainingAmount(balance);
+      };
+      
+      loadPartyDetails();
+      loadRemainingBalance();
+    }
+  }, [invoiceId, invoices, getParty, getInvoiceRemainingBalance, returns]);
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const paymentForm = useForm<PaymentFormValues>({
+    defaultValues: {
+      amount: 0,
+      mode: 'cash',
+      description: '',
+      reference: ''
+    }
+  });
+
+  const handleRecordPayment = async (data: PaymentFormValues) => {
+    if (!invoice) return;
+    
+    try {
+      await recordPartialPayment(invoice.id, data.amount, {
+        mode: data.mode,
+        description: data.description,
+        reference: data.reference
+      });
+      
+      toast({
+        title: "Success",
+        description: "Payment recorded successfully"
+      });
+      
+      // Refresh remaining amount
+      const balance = await getInvoiceRemainingBalance(invoice.id);
+      setRemainingAmount(balance);
+    } catch (error) {
+      console.error('Error recording payment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to record payment",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading...</div>;
+  }
+
+  if (!invoice) {
     return (
-      <div className="flex flex-col items-center justify-center h-[70vh]">
+      <div className="p-8 text-center">
         <h1 className="text-2xl font-bold mb-4">Invoice Not Found</h1>
-        <p className="text-gray-600 mb-6">The invoice you're looking for doesn't exist.</p>
-        <Button onClick={() => navigate('/invoices')}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Invoices
+        <p className="mb-4">The invoice you're looking for doesn't exist or has been deleted.</p>
+        <Button onClick={() => navigate(-1)}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
         </Button>
       </div>
     );
   }
 
-  const invoiceDate = new Date(invoice.date);
-  const dueDate = new Date(invoiceDate);
-  dueDate.setDate(dueDate.getDate() + 15);
-  const dueDateStr = dueDate.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  });
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = () => {
-    if (printRef.current) {
-      const options = {
-        margin: [10, 10, 10, 10],
-        filename: `Invoice-${invoice.invoiceNumber}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
-      toast({
-        title: 'Generating PDF',
-        description: 'Your PDF is being generated...',
-      });
-
-      html2pdf().from(printRef.current).set(options).save().then(() => {
-        toast({
-          title: 'PDF Generated',
-          description: 'Your PDF has been successfully downloaded.',
-        });
-      });
-    }
-  };
-
-  const handleWhatsAppShare = () => {
-    const message = encodeURIComponent(
-      `Invoice: ${invoice.invoiceNumber}\n` +
-      `Date: ${new Date(invoice.date).toLocaleDateString()}\n` +
-      `Amount: ₹${invoice.total.toLocaleString('en-IN')}\n` +
-      `Status: ${invoice.status.toUpperCase()}\n\n` +
-      `Please check your email for the detailed invoice or contact us for any queries.`
-    );
-    
-    window.open(`https://wa.me/91${party.mobile}?text=${message}`, '_blank');
-  };
-
-  const handleEmailShare = () => {
-    const subject = encodeURIComponent(`Invoice ${invoice.invoiceNumber} from ${businessInfo.name}`);
-    const body = encodeURIComponent(
-      `Dear ${party.name},\n\n` +
-      `Please find the details of your invoice:\n\n` +
-      `Invoice Number: ${invoice.invoiceNumber}\n` +
-      `Date: ${new Date(invoice.date).toLocaleDateString()}\n` +
-      `Amount: ₹${invoice.total.toLocaleString('en-IN')}\n` +
-      `Status: ${invoice.status.toUpperCase()}\n\n` +
-      `Item Details:\n` +
-      invoice.items.map(item => 
-        `- ${item.product}: ${item.qty} x ₹${item.rate} = ₹${item.amount}`
-      ).join('\n') +
-      `\n\nSubtotal: ₹${invoice.subtotal.toLocaleString('en-IN')}\n` +
-      `GST (${invoice.gstPercentage}%): ₹${invoice.gstAmount.toLocaleString('en-IN')}\n` +
-      `Discount: ₹${invoice.discount.toLocaleString('en-IN')}\n` +
-      `Total: ₹${invoice.total.toLocaleString('en-IN')}\n\n` +
-      `For any questions, please contact us at:\n` +
-      `Phone: ${businessInfo.phone}\n` +
-      `Email: ${businessInfo.email}\n\n` +
-      `Thank you for your business!\n\n` +
-      `Regards,\n${businessInfo.name}`
-    );
-    
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
-  };
-
-  const togglePaymentStatus = async () => {
-    const updatedInvoice = { 
-      ...invoice, 
-      status: invoice.status === 'paid' ? 'unpaid' as const : 'paid' as const,
-      paidAmount: invoice.status === 'paid' ? 0 : invoice.total 
-    };
-    
-    await updateInvoice(updatedInvoice);
-    setInvoice(updatedInvoice);
-    
-    toast({
-      title: 'Payment Status Updated',
-      description: `Invoice marked as ${updatedInvoice.status.toUpperCase()}.`,
-    });
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-  
-  const handlePartialPayment = async () => {
-    if (!paymentAmount || paymentAmount <= 0) {
-      toast({
-        title: 'Invalid Amount',
-        description: 'Please enter a valid payment amount.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (paymentAmount > remainingBalance) {
-      toast({
-        title: 'Amount Too High',
-        description: `Maximum payment amount is ₹${remainingBalance.toLocaleString('en-IN')}`,
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    await recordPartialPayment(
-      invoice.id,
-      paymentAmount,
-      {
-        mode: paymentMode,
-        reference: paymentReference,
-        description: paymentDescription || `Partial payment for invoice ${invoice.invoiceNumber}`
-      }
-    );
-    
-    if (invoiceId) {
-      const updatedInvoice = await getInvoice(invoiceId);
-      if (updatedInvoice) setInvoice(updatedInvoice);
-      
-      const updatedTransactions = await getTransactionsByInvoice(invoiceId);
-      setTransactions(updatedTransactions);
-      
-      const updatedBalance = await getInvoiceRemainingBalance(invoiceId);
-      setRemainingBalance(updatedBalance);
-    }
-    
-    toast({
-      title: 'Payment Recorded',
-      description: `₹${paymentAmount.toLocaleString('en-IN')} payment has been recorded.`,
-    });
-    
-    setPaymentAmount(0);
-    setPaymentReference('');
-    setPaymentDescription('');
-    setIsPartialPaymentOpen(false);
-  };
-
-  const isPurchaseInvoice = party.type === 'supplier';
-  const invoiceTitle = isPurchaseInvoice ? 'PURCHASE BILL' : 'TAX INVOICE';
-  
-  const taxableAmount = invoice.subtotal - invoice.discount;
-  const cgstAmount = invoice.gstAmount / 2;
-  const sgstAmount = invoice.gstAmount / 2;
-  
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-4 justify-between items-center no-print">
-        <div className="flex items-center gap-4">
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={() => navigate('/invoices')}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {isPurchaseInvoice ? 'Purchase Bill' : 'Invoice'} {invoice.invoiceNumber}
-            </h1>
-            <p className="text-muted-foreground">
-              {formatDate(invoice.date)}
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex flex-wrap gap-2">
-          {invoice.status !== 'paid' && (
-            <Dialog open={isPartialPaymentOpen} onOpenChange={setIsPartialPaymentOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <CreditCard className="mr-2 h-4 w-4" /> Record Payment
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Record Payment</DialogTitle>
-                  <DialogDescription>
-                    Record a payment for Invoice #{invoice.invoiceNumber}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Amount</Label>
-                    <div className="relative">
-                      <IndianRupee className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="amount"
-                        placeholder="0.00"
-                        type="number"
-                        className="pl-9"
-                        value={paymentAmount || ''}
-                        onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                        max={remainingBalance}
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Remaining balance: ₹{remainingBalance.toLocaleString('en-IN')}
+  const returnsCard = (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="text-xl">Returns</CardTitle>
+        <CardDescription>
+          Returns associated with this invoice
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {relatedReturns.length > 0 ? (
+          <div className="space-y-4">
+            {relatedReturns.map(ret => (
+              <div key={ret.id} className="border rounded-lg p-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="font-medium">
+                      {ret.type === 'purchase' ? 'Purchase Return' : 'Sales Return'} #{ret.returnNumber}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {new Date(ret.date).toLocaleDateString()} - 
+                      Items: {ret.items.reduce((sum, item) => sum + item.qty, 0)}
                     </p>
                   </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="paymentMode">Payment Mode</Label>
-                    <Select value={paymentMode} onValueChange={(value) => setPaymentMode(value as any)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select payment mode" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                        <SelectItem value="upi">UPI</SelectItem>
-                        <SelectItem value="cheque">Cheque</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="reference">Reference Number</Label>
-                    <Input
-                      id="reference"
-                      placeholder="Transaction ID, Cheque number, etc."
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optional)</Label>
-                    <Input
-                      id="description"
-                      placeholder="Additional notes about this payment"
-                      value={paymentDescription}
-                      onChange={(e) => setPaymentDescription(e.target.value)}
-                    />
+                  <div className="flex flex-col items-end">
+                    <span className="font-medium">₹{ret.total.toLocaleString('en-IN')}</span>
+                    <Badge 
+                      variant={ret.status === 'processed' ? 'default' : ret.status === 'pending' ? 'outline' : 'destructive'}
+                      className="mt-1"
+                    >
+                      {ret.status}
+                    </Badge>
                   </div>
                 </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsPartialPaymentOpen(false)}>
-                    Cancel
+                
+                <div className="mt-2 flex justify-end">
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => navigate(`/${ret.type}-returns/${ret.id}`)}
+                  >
+                    View Details <ArrowRight className="ml-2 h-3 w-3" />
                   </Button>
-                  <Button onClick={handlePartialPayment}>
-                    Record Payment
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <RotateCcw className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="mt-2 font-medium">No returns found</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              No returns have been created for this invoice
+            </p>
+            
+            {invoice && (
+              <div className="mt-4 flex justify-center gap-2">
+                {partyType === 'customer' && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => navigate(`/sales-returns/new?invoice=${invoice.id}`)}
+                  >
+                    Create Sales Return
                   </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-          <Button variant="outline" onClick={togglePaymentStatus}>
-            Mark as {invoice.status === 'paid' ? 'Unpaid' : 'Paid'}
+                )}
+                
+                {partyType === 'supplier' && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => navigate(`/purchase-returns/new?invoice=${invoice.id}`)}
+                  >
+                    Create Purchase Return
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Invoices
           </Button>
-          <Button variant="outline" onClick={() => navigate(`/invoices/edit/${invoice.id}`)}>
-            <Edit className="mr-2 h-4 w-4" /> Edit
-          </Button>
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> Print
-          </Button>
-          <Button variant="outline" onClick={handleDownloadPDF}>
-            <Download className="mr-2 h-4 w-4" /> PDF
-          </Button>
-          {party.mobile && (
-            <Button variant="outline" onClick={handleWhatsAppShare}>
-              <Phone className="mr-2 h-4 w-4" /> WhatsApp
-            </Button>
-          )}
-          <Button variant="outline" onClick={handleEmailShare}>
-            <Mail className="mr-2 h-4 w-4" /> Email
-          </Button>
+          <h1 className="text-3xl font-bold tracking-tight mt-2">Invoice Details</h1>
+          <p className="text-muted-foreground">
+            View and manage invoice #{invoice.invoiceNumber}
+          </p>
         </div>
+        <Button onClick={() => window.print()}>
+          <Printer className="mr-2 h-4 w-4" /> Print Invoice
+        </Button>
       </div>
 
-      {transactions.length > 0 && (
-        <div className="border rounded-md p-4 no-print">
-          <h2 className="text-lg font-medium mb-3">Payment History</h2>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((transaction) => (
-                <TableRow key={transaction.id}>
-                  <TableCell>{formatDate(transaction.date)}</TableCell>
-                  <TableCell className="capitalize">{transaction.mode.replace('_', ' ')}</TableCell>
-                  <TableCell>{transaction.reference || '-'}</TableCell>
-                  <TableCell>{transaction.description || '-'}</TableCell>
-                  <TableCell className="text-right font-medium">₹{transaction.amount.toLocaleString('en-IN')}</TableCell>
-                </TableRow>
-              ))}
-              <TableRow>
-                <TableCell colSpan={4} className="text-right font-medium">Total Paid:</TableCell>
-                <TableCell className="text-right font-medium">₹{invoice.paidAmount.toLocaleString('en-IN')}</TableCell>
-              </TableRow>
-              {invoice.status !== 'paid' && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-right font-medium">Balance Due:</TableCell>
-                  <TableCell className="text-right font-medium text-destructive">
-                    ₹{(invoice.total - invoice.paidAmount).toLocaleString('en-IN')}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <Tabs defaultValue="details" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="payment">Record Payment</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="details" className="space-y-4">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoice Information</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Invoice Number</dt>
+                    <dd className="mt-1 text-sm">{invoice.invoiceNumber}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Date</dt>
+                    <dd className="mt-1 text-sm">{formatDate(invoice.date)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Party Name</dt>
+                    <dd className="mt-1 text-sm">{partyName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Status</dt>
+                    <dd className="mt-1 text-sm">
+                      {invoice.status === 'paid' ? (
+                        <Badge variant="default">Paid</Badge>
+                      ) : invoice.status === 'partial' ? (
+                        <Badge variant="secondary">Partial</Badge>
+                      ) : (
+                        <Badge variant="destructive">Unpaid</Badge>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Total Amount</dt>
+                    <dd className="mt-1 text-sm font-bold">₹{invoice.total.toLocaleString('en-IN')}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Remaining Amount</dt>
+                    <dd className="mt-1 text-sm font-bold">₹{remainingAmount.toLocaleString('en-IN')}</dd>
+                  </div>
+                </dl>
+              </CardContent>
+            </Card>
 
-      <div id="invoice-print-container" className="bg-white border border-gray-200 rounded-md shadow-sm p-6 print:p-4 print:shadow-none" ref={printRef}>
-        <div className="print-only-invoice mx-auto max-w-[210mm] print:max-w-full">
-          <div className="flex justify-between border-b border-gray-300 pb-4">
-            <div>
-              <h1 className="text-xl font-bold">{businessInfo.name}</h1>
-              <p className="text-sm">{businessInfo.address.split(',')[0]}</p>
-              <p className="text-sm">{businessInfo.address.split(',').slice(1).join(', ')}</p>
-              <p className="text-sm">GSTIN: {businessInfo.gst || 'N/A'}</p>
-            </div>
-            
-            <div className="text-right">
-              <h2 className="text-xl font-bold">{invoiceTitle}</h2>
-              <p className="text-sm">Invoice #: {invoice.invoiceNumber}</p>
-              <p className="text-sm">Date: {formatDate(invoice.date)}</p>
-              <p className="text-sm">Due Date: {dueDateStr}</p>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Delivery Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Delivery By</dt>
+                    <dd className="mt-1 text-sm">{invoice.deliveryBy || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Transport</dt>
+                    <dd className="mt-1 text-sm">{invoice.transport || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Vehicle No</dt>
+                    <dd className="mt-1 text-sm">{invoice.vehicleNo || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">E-way Bill No</dt>
+                    <dd className="mt-1 text-sm">{invoice.eWayBillNo || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">PO Number</dt>
+                    <dd className="mt-1 text-sm">{invoice.poNumber || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Payment Term</dt>
+                    <dd className="mt-1 text-sm">{invoice.paymentTerm || 'N/A'}</dd>
+                  </div>
+                </dl>
+              </CardContent>
+            </Card>
           </div>
-          
-          <div className="mt-6 mb-8">
-            <h3 className="font-semibold mb-2">{isPurchaseInvoice ? 'Supplier:' : 'Customer:'}</h3>
-            <p className="font-semibold">{party.name}</p>
-            <p className="text-sm">{party.address.split(',')[0]}</p>
-            <p className="text-sm">{party.state || party.address.split(',').slice(1).join(', ')}</p>
-            <p className="text-sm">GSTIN: {party.gst || 'N/A'}</p>
-            <p className="text-sm">Contact: {party.mobile || 'N/A'}</p>
-          </div>
-          
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-gray-400">
-                <th className="py-2 px-4 text-left">S.NO</th>
-                <th className="py-2 px-4 text-left">ITEM DESCRIPTION</th>
-                <th className="py-2 px-4 text-left">HSN</th>
-                <th className="py-2 px-4 text-right">QTY</th>
-                <th className="py-2 px-4 text-right">RATE</th>
-                <th className="py-2 px-4 text-right">AMOUNT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoice.items.map((item, index) => (
-                <tr key={item.id} className="border-b border-gray-200">
-                  <td className="py-2 px-4">{index + 1}</td>
-                  <td className="py-2 px-4">{item.product}</td>
-                  <td className="py-2 px-4">{item.hsn || Math.floor(Math.random() * 900000) + 100000}</td>
-                  <td className="py-2 px-4 text-right">{item.qty}</td>
-                  <td className="py-2 px-4 text-right">₹{item.rate.toFixed(2)}</td>
-                  <td className="py-2 px-4 text-right">₹{item.amount.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          
-          <div className="flex mt-6">
-            <div className="w-1/2 pr-4">
-              <div className="border border-gray-300 rounded p-4">
-                <h3 className="font-semibold mb-2">Payment Information:</h3>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td className="py-1">Account Name:</td>
-                      <td className="py-1">{businessInfo.name}</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1">Bank:</td>
-                      <td className="py-1">HDFC Bank</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1">A/C No:</td>
-                      <td className="py-1">N/A</td>
-                    </tr>
-                    <tr>
-                      <td className="py-1">IFSC:</td>
-                      <td className="py-1">N/A</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Invoice Items</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead className="text-right">Quantity</TableHead>
+                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoice.items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.product}</TableCell>
+                      <TableCell className="text-right">{item.qty}</TableCell>
+                      <TableCell className="text-right">₹{item.rate.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">₹{item.amount.toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
               
-              <div className="mt-4">
-                <h3 className="font-semibold mb-2">Notes:</h3>
-                <p className="text-sm">No additional notes</p>
+              <div className="mt-4 flex flex-col items-end">
+                <div className="w-48 space-y-2">
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>₹{invoice.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>GST ({invoice.gstPercentage}%):</span>
+                    <span>₹{invoice.gstAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>Total:</span>
+                    <span>₹{invoice.total.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            <div className="w-1/2 pl-4">
-              <table className="w-full text-sm">
-                <tbody>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold">Subtotal:</td>
-                    <td className="py-2 text-right">₹{invoice.subtotal.toFixed(2)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold">Discount ({((invoice.discount / invoice.subtotal) * 100).toFixed(0)}%):</td>
-                    <td className="py-2 text-right">-₹{invoice.discount.toFixed(2)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold">Taxable Amount:</td>
-                    <td className="py-2 text-right">₹{taxableAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold">CGST:</td>
-                    <td className="py-2 text-right">₹{cgstAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold">SGST:</td>
-                    <td className="py-2 text-right">₹{sgstAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-200">
-                    <td className="py-2 font-semibold text-lg">Total:</td>
-                    <td className="py-2 text-right font-bold text-lg">₹{invoice.total.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td className="pt-2 font-semibold">Amount Paid:</td>
-                    <td className="pt-2 text-right">₹{invoice.paidAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td className="pt-2 font-semibold">Balance Due:</td>
-                    <td className="pt-2 text-right font-bold">
-                      ₹{(invoice.total - invoice.paidAmount).toFixed(2)}
-                      <span className={`ml-2 inline-block px-2 py-1 text-xs rounded-full ${
-                        invoice.status === 'paid' 
-                          ? 'bg-green-100 text-green-800' 
-                          : invoice.status === 'partial' 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-red-100 text-red-800'
-                      }`}>
-                        {invoice.status.toUpperCase()}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-          
-          <div className="mt-10 pt-4 border-t border-gray-300 flex justify-between">
-            <div className="w-1/2">
-              <h3 className="font-semibold mb-2">Terms & Conditions:</h3>
-              <p className="text-sm">All goods remain the property of the seller until paid in full</p>
-            </div>
-            <div className="w-1/2 text-right">
-              <p className="font-semibold mb-20">Authorized Signature</p>
-              <p className="font-semibold">{businessInfo.name}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+            </CardContent>
+          </Card>
+          {returnsCard}
+        </TabsContent>
+
+        <TabsContent value="payment" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Record Payment</CardTitle>
+              <CardDescription>
+                Record a payment for this invoice
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Form {...paymentForm}>
+                <form onSubmit={paymentForm.handleSubmit(handleRecordPayment)} className="space-y-4">
+                  <FormField
+                    control={paymentForm.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Amount</FormLabel>
+                        <FormControl>
+                          <Input type="number" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={paymentForm.control}
+                    name="mode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Payment Mode</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a mode" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="cash">Cash</SelectItem>
+                            <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                            <SelectItem value="upi">UPI</SelectItem>
+                            <SelectItem value="cheque">Cheque</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={paymentForm.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description</FormLabel>
+                        <FormControl>
+                          <Input type="text" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={paymentForm.control}
+                    name="reference"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Reference</FormLabel>
+                        <FormControl>
+                          <Input type="text" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Button type="submit">Record Payment</Button>
+                </form>
+              </Form>
+            </CardContent>
+            <CardFooter>
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm text-muted-foreground">
+                  Remaining amount: ₹{remainingAmount.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
