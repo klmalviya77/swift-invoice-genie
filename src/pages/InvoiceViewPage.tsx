@@ -65,6 +65,11 @@ const InvoiceViewPage: React.FC = () => {
   const [partyType, setPartyType] = useState<'customer' | 'supplier' | ''>('');
   const [remainingAmount, setRemainingAmount] = useState<number>(0);
   const [relatedReturns, setRelatedReturns] = useState<Return[]>([]);
+  const [businessInfo, setBusinessInfo] = useState({
+    name: 'BizSwift Enterprise',
+    address: '123 Business Street, City, State, PIN',
+    gst: '22AAAAA0000A1Z5'
+  });
   const invoicePrintRef = useRef<HTMLDivElement>(null);
   
   // Get invoice details
@@ -74,7 +79,12 @@ const InvoiceViewPage: React.FC = () => {
     const foundInvoice = invoices.find(inv => inv.id === invoiceId);
     if (foundInvoice) {
       // Cast to ExtendedInvoice to handle the extra properties
-      setInvoice(foundInvoice as ExtendedInvoice);
+      const extInvoice = {...foundInvoice} as ExtendedInvoice;
+      extInvoice.companyName = businessInfo.name;
+      extInvoice.companyAddress = businessInfo.address;
+      extInvoice.companyGST = businessInfo.gst;
+      
+      setInvoice(extInvoice);
       
       // Find related returns
       const invoiceReturns = returns.filter(ret => ret.invoiceId === invoiceId);
@@ -89,10 +99,9 @@ const InvoiceViewPage: React.FC = () => {
             setPartyType(party.type);
             
             // Update invoice with party details if available
-            const extendedInvoice = {...foundInvoice} as ExtendedInvoice;
-            extendedInvoice.partyAddress = party.address;
-            extendedInvoice.partyGST = party.gst;
-            setInvoice(extendedInvoice);
+            extInvoice.partyAddress = party.address;
+            extInvoice.partyGST = party.gst;
+            setInvoice({...extInvoice});
           }
         }
       };
@@ -106,7 +115,7 @@ const InvoiceViewPage: React.FC = () => {
       loadPartyDetails();
       loadRemainingBalance();
     }
-  }, [invoiceId, invoices, getParty, getInvoiceRemainingBalance, returns]);
+  }, [invoiceId, invoices, getParty, getInvoiceRemainingBalance, returns, businessInfo]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -185,10 +194,11 @@ const InvoiceViewPage: React.FC = () => {
 
   // Handle the print functionality
   const handlePrint = () => {
+    if (!invoice) return;
+    
     const printContent = document.getElementById('invoice-print-content');
     if (!printContent) return;
     
-    const originalContent = document.body.innerHTML;
     const printStyles = `
       <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -219,7 +229,6 @@ const InvoiceViewPage: React.FC = () => {
       printWindow.onload = function() {
         printWindow.focus();
         printWindow.print();
-        //printWindow.close();
       };
     }
   };
@@ -227,11 +236,11 @@ const InvoiceViewPage: React.FC = () => {
   // Generate PDF functionality
   const generatePDF = () => {
     const element = document.getElementById('invoice-print-content');
-    if (!element) return;
+    if (!element || !invoice) return;
     
     const opt = {
       margin: [10, 10, 10, 10],
-      filename: `Invoice-${invoice?.invoiceNumber}.pdf`,
+      filename: `Invoice-${invoice.invoiceNumber}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2 },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -263,7 +272,7 @@ const InvoiceViewPage: React.FC = () => {
     
     const subject = encodeURIComponent(`Invoice #${invoice.invoiceNumber}`);
     const body = encodeURIComponent(
-      `Dear ${partyName},\n\nPlease find attached invoice #${invoice.invoiceNumber} dated ${formatDate(invoice.date)} for amount ₹${invoice.total.toLocaleString('en-IN')}.\n\nRegards,\n${invoice.companyName || 'Company Name'}`
+      `Dear ${partyName},\n\nPlease find attached invoice #${invoice.invoiceNumber} dated ${formatDate(invoice.date)} for amount ₹${invoice.total.toLocaleString('en-IN')}.\n\nRegards,\n${invoice.companyName || businessInfo.name}`
     );
     
     window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
@@ -383,7 +392,7 @@ const InvoiceViewPage: React.FC = () => {
 
   // Content for printing and PDF
   const invoicePrintContent = (
-    <div id="invoice-print-content" className="hidden print:block">
+    <div id="invoice-print-content" className="p-8">
       <div className="print-header">
         <div>
           <div className="print-title">INVOICE</div>
@@ -391,13 +400,13 @@ const InvoiceViewPage: React.FC = () => {
           <div>Date: {formatDate(invoice.date)}</div>
         </div>
         <div>
-          <div>{invoice.companyName || 'Company Name'}</div>
-          <div>{invoice.companyAddress || 'Company Address'}</div>
-          <div>GST: {invoice.companyGST || 'N/A'}</div>
+          <div>{invoice.companyName || businessInfo.name}</div>
+          <div>{invoice.companyAddress || businessInfo.address}</div>
+          <div>GST: {invoice.companyGST || businessInfo.gst}</div>
         </div>
       </div>
       
-      <div className="print-party-info">
+      <div className="print-party-info mt-4">
         <div>
           <strong>Bill To:</strong>
           <div>{partyName}</div>
@@ -406,34 +415,34 @@ const InvoiceViewPage: React.FC = () => {
         </div>
       </div>
       
-      <table>
+      <table className="w-full mt-6 border-collapse">
         <thead>
           <tr>
-            <th>Item</th>
-            <th>Quantity</th>
-            <th>Rate</th>
-            <th>Amount</th>
+            <th className="border border-gray-300 p-2 bg-gray-100">Item</th>
+            <th className="border border-gray-300 p-2 bg-gray-100">Quantity</th>
+            <th className="border border-gray-300 p-2 bg-gray-100">Rate</th>
+            <th className="border border-gray-300 p-2 bg-gray-100">Amount</th>
           </tr>
         </thead>
         <tbody>
           {invoice.items.map((item, index) => (
             <tr key={index}>
-              <td>{item.product}</td>
-              <td>{item.qty}</td>
-              <td>₹{item.rate.toFixed(2)}</td>
-              <td>₹{item.amount.toFixed(2)}</td>
+              <td className="border border-gray-300 p-2">{item.product}</td>
+              <td className="border border-gray-300 p-2">{item.qty}</td>
+              <td className="border border-gray-300 p-2">₹{item.rate.toFixed(2)}</td>
+              <td className="border border-gray-300 p-2">₹{item.amount.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
       </table>
       
-      <div className="total-section">
+      <div className="total-section mt-4 text-right">
         <div>Subtotal: ₹{invoice.subtotal.toFixed(2)}</div>
         <div>GST ({invoice.gstPercentage}%): ₹{invoice.gstAmount.toFixed(2)}</div>
-        <div><strong>Total: ₹{invoice.total.toFixed(2)}</strong></div>
+        <div className="font-bold">Total: ₹{invoice.total.toFixed(2)}</div>
       </div>
       
-      <div className="footer">
+      <div className="footer mt-8 pt-4 border-t border-gray-300">
         <div><strong>Payment Terms:</strong> {invoice.paymentTerm || 'N/A'}</div>
         <div><strong>Notes:</strong> {invoice.notes || ''}</div>
       </div>
@@ -733,7 +742,7 @@ const InvoiceViewPage: React.FC = () => {
         </TabsContent>
       </Tabs>
       
-      {/* Hidden content for printing/PDF */}
+      {/* Hidden print content - now visible with proper styling */}
       {invoicePrintContent}
     </div>
   );
