@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
@@ -275,7 +274,7 @@ const PurchaseReturnPage: React.FC = () => {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">No invoice (Direct return)</SelectItem>
+                          <SelectItem value="no-invoice">No invoice (Direct return)</SelectItem>
                           {partyInvoices.map(invoice => (
                             <SelectItem key={invoice.id} value={invoice.id}>
                               {invoice.invoiceNumber} ({new Date(invoice.date).toLocaleDateString()})
