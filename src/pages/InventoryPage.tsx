@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -58,12 +58,13 @@ import {
   generateQuickInvoice, 
   getLowStockProducts,
   getOutOfStockProducts,
-  getStockMovementHistory
+  getStockMovementHistory,
+  getProducts
 } from '@/lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const InventoryPage: React.FC = () => {
-  const { products, parties, saveProduct, removeProduct } = useApp();
+  const { products: appProducts, parties, saveProduct, removeProduct } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>('name');
@@ -71,6 +72,14 @@ const InventoryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Products fetched directly from storage
+  const [products, setProducts] = useState<Product[]>([]);
+  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+  const [outOfStockProducts, setOutOfStockProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
+  const [productHistory, setProductHistory] = useState<Array<{ date: string; change: number; invoiceId: string; invoiceNumber: string }>>([]);
+  const [loading, setLoading] = useState(true);
 
   // Product form state
   const [formProduct, setFormProduct] = useState<Product>({
@@ -102,6 +111,98 @@ const InventoryPage: React.FC = () => {
     adjustmentType: 'increase' as 'increase' | 'decrease'
   });
 
+  // Fetch products data on component mount and when appProducts changes
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [allProducts, lowStock, outOfStock] = await Promise.all([
+          getProducts(),
+          getLowStockProducts(),
+          getOutOfStockProducts()
+        ]);
+        
+        setProducts(allProducts);
+        setLowStockProducts(lowStock);
+        setOutOfStockProducts(outOfStock);
+        
+        // Apply current filters
+        filterProducts(allProducts);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [appProducts]);
+
+  // Fetch product history when selectedProductId changes
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (selectedProductId) {
+        try {
+          const history = await getStockMovementHistory(selectedProductId);
+          setProductHistory(history);
+        } catch (error) {
+          console.error("Error fetching product history:", error);
+        }
+      }
+    };
+    
+    fetchHistory();
+  }, [selectedProductId]);
+
+  // Update filtered products when tab or search changes
+  useEffect(() => {
+    filterProducts(products);
+  }, [activeTab, searchTerm]);
+
+  const filterProducts = (productList: Product[]) => {
+    let filtered = [...productList];
+    
+    // Apply tab filter
+    if (activeTab === "low-stock") {
+      filtered = lowStockProducts;
+    } else if (activeTab === "out-of-stock") {
+      filtered = outOfStockProducts;
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      filtered = filtered.filter((product) => {
+        return (
+          product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          product.price.toString().includes(searchTerm)
+        );
+      });
+    }
+    
+    // Apply sorting
+    const sorted = [...filtered].sort((a, b) => {
+      let compareA, compareB;
+      
+      if (sortField === 'price') {
+        compareA = a.price;
+        compareB = b.price;
+      } else if (sortField === 'stock') {
+        compareA = a.stock || 0;
+        compareB = b.stock || 0;
+      } else {
+        compareA = a[sortField as keyof typeof a];
+        compareB = b[sortField as keyof typeof b];
+      }
+      
+      if (compareA < compareB) return sortDirection === 'asc' ? -1 : 1;
+      if (compareA > compareB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    setFilteredProducts(sorted);
+  };
+
   const toggleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -116,63 +217,27 @@ const InventoryPage: React.FC = () => {
     return sortDirection === 'asc' ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
-  // Filter products based on tab and search term
-  const getFilteredProducts = () => {
-    let filtered = [...products];
-    
-    // Apply tab filter
-    if (activeTab === "low-stock") {
-      filtered = getLowStockProducts();
-    } else if (activeTab === "out-of-stock") {
-      filtered = getOutOfStockProducts();
-    }
-    
-    // Apply search filter
-    if (searchTerm) {
-      filtered = filtered.filter((product) => {
-        return (
-          product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.price.toString().includes(searchTerm)
-        );
-      });
-    }
-    
-    return filtered;
-  };
-
-  const filteredProducts = getFilteredProducts();
-
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    let compareA, compareB;
-    
-    if (sortField === 'price') {
-      compareA = a.price;
-      compareB = b.price;
-    } else if (sortField === 'stock') {
-      compareA = a.stock || 0;
-      compareB = b.stock || 0;
-    } else {
-      compareA = a[sortField as keyof typeof a];
-      compareB = b[sortField as keyof typeof b];
-    }
-    
-    if (compareA < compareB) return sortDirection === 'asc' ? -1 : 1;
-    if (compareA > compareB) return sortDirection === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  const handleDeleteProduct = (id: string) => {
-    removeProduct(id);
+  const handleDeleteProduct = async (id: string) => {
+    await removeProduct(id);
     setConfirmDelete(null);
+    // Refresh products
+    const updatedProducts = await getProducts();
+    setProducts(updatedProducts);
+    filterProducts(updatedProducts);
+    
     toast({
       title: 'Product Deleted',
       description: 'The product has been deleted successfully.',
     });
   };
 
-  const handleSaveProduct = () => {
-    saveProduct(formProduct);
+  const handleSaveProduct = async () => {
+    await saveProduct(formProduct);
+    // Refresh products
+    const updatedProducts = await getProducts();
+    setProducts(updatedProducts);
+    filterProducts(updatedProducts);
+    
     setFormProduct({
       id: '',
       name: '',
@@ -183,6 +248,7 @@ const InventoryPage: React.FC = () => {
       lowStockAlert: 5,
       costPrice: 0
     });
+    
     toast({
       title: 'Product Saved',
       description: 'The product has been saved successfully.',
@@ -193,7 +259,7 @@ const InventoryPage: React.FC = () => {
     setFormProduct({ ...product });
   };
 
-  const handleStockAdjustment = () => {
+  const handleStockAdjustment = async () => {
     if (!stockAdjustment.productId) {
       toast({
         title: 'Error',
@@ -222,7 +288,12 @@ const InventoryPage: React.FC = () => {
       stock: product.stock + adjustmentValue
     };
 
-    saveProduct(updatedProduct);
+    await saveProduct(updatedProduct);
+    
+    // Refresh products
+    const updatedProducts = await getProducts();
+    setProducts(updatedProducts);
+    filterProducts(updatedProducts);
     
     toast({
       title: 'Stock Updated',
@@ -250,31 +321,27 @@ const InventoryPage: React.FC = () => {
     return <Badge variant="outline" className="bg-green-100 text-green-800">In Stock</Badge>;
   };
 
-  // Get product stock movement history
-  const getProductHistory = (productId: string) => {
-    return getStockMovementHistory(productId);
-  };
-
-  const getTotalInventoryValue = () => {
-    return products.reduce((total, product) => {
-      return total + (product.stock * product.price);
-    }, 0);
-  };
-
+  // Calculate inventory statistics
   const getInventoryStats = () => {
     const totalProducts = products.length;
-    const lowStockCount = getLowStockProducts().length;
-    const outOfStockCount = getOutOfStockProducts().length;
+    const lowStockCount = lowStockProducts.length;
+    const outOfStockCount = outOfStockProducts.length;
+    const inStockCount = totalProducts - outOfStockCount;
+    
+    const totalInventoryValue = products.reduce((total, product) => {
+      return total + (product.stock * product.price);
+    }, 0);
     
     return {
       totalProducts,
       lowStockCount,
       outOfStockCount,
-      inStockCount: totalProducts - outOfStockCount
+      inStockCount,
+      totalInventoryValue
     };
   };
 
-  const stats = getInventoryStats();
+  const inventoryStats = getInventoryStats();
 
   return (
     <div className="space-y-6">

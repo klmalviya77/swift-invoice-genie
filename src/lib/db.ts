@@ -51,7 +51,8 @@ export const openDB = (): Promise<IDBDatabase> => {
       }
       
       if (!db.objectStoreNames.contains(STORES.BUSINESS_INFO)) {
-        db.createObjectStore(STORES.BUSINESS_INFO, { keyPath: 'name' });
+        // Use 'name' as the keyPath for BusinessInfo
+        const businessInfoStore = db.createObjectStore(STORES.BUSINESS_INFO, { keyPath: 'name' });
       }
     };
   });
@@ -114,25 +115,49 @@ export const getItemById = async <T>(storeName: string, id: string): Promise<T |
 };
 
 // Generic function to save an item
-export const saveItem = async <T extends { id?: string }>(
+export const saveItem = async <T>(
   storeName: string, 
   item: T,
   generateId: () => string = () => crypto.randomUUID()
 ): Promise<T> => {
   try {
-    // Ensure the item has an ID
-    if (!item.id) {
-      item.id = generateId();
+    // Special case for BusinessInfo which uses 'name' as keyPath, not 'id'
+    if (storeName === STORES.BUSINESS_INFO) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.put(item);
+        
+        request.onsuccess = () => {
+          resolve(item);
+        };
+        
+        request.onerror = () => {
+          console.error(`Error saving item to ${storeName}:`, request.error);
+          reject(request.error);
+        };
+        
+        transaction.oncomplete = () => {
+          db.close();
+        };
+      });
+    }
+    
+    // For normal objects with 'id' field
+    const itemWithId = item as any;
+    if (!itemWithId.id) {
+      itemWithId.id = generateId();
     }
     
     const db = await openDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(storeName, 'readwrite');
       const store = transaction.objectStore(storeName);
-      const request = store.put(item);
+      const request = store.put(itemWithId);
       
       request.onsuccess = () => {
-        resolve(item);
+        resolve(itemWithId);
       };
       
       request.onerror = () => {

@@ -1,5 +1,4 @@
-
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -42,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Transaction } from '@/lib/storage';
+import { Invoice, Party, Transaction } from '@/lib/storage';
 
 const InvoiceViewPage: React.FC = () => {
   const { invoiceId } = useParams();
@@ -65,10 +64,40 @@ const InvoiceViewPage: React.FC = () => {
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentDescription, setPaymentDescription] = useState('');
   
-  const invoice = invoiceId ? getInvoice(invoiceId) : null;
-  const party = invoice ? getParty(invoice.partyId) : null;
-  const transactions = invoiceId ? getTransactionsByInvoice(invoiceId) : [];
-  const remainingBalance = invoiceId ? getInvoiceRemainingBalance(invoiceId) : 0;
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [party, setParty] = useState<Party | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [remainingBalance, setRemainingBalance] = useState<number>(0);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!invoiceId) return;
+      
+      try {
+        const invoiceData = await getInvoice(invoiceId);
+        if (!invoiceData) {
+          return;
+        }
+        
+        setInvoice(invoiceData);
+        
+        if (invoiceData.partyId) {
+          const partyData = await getParty(invoiceData.partyId);
+          setParty(partyData || null);
+        }
+        
+        const transactionsData = await getTransactionsByInvoice(invoiceId);
+        setTransactions(transactionsData);
+        
+        const balance = await getInvoiceRemainingBalance(invoiceId);
+        setRemainingBalance(balance);
+      } catch (error) {
+        console.error("Error fetching invoice data:", error);
+      }
+    };
+    
+    fetchData();
+  }, [invoiceId, getInvoice, getParty, getTransactionsByInvoice, getInvoiceRemainingBalance]);
   
   if (!invoice || !party) {
     return (
@@ -82,7 +111,6 @@ const InvoiceViewPage: React.FC = () => {
     );
   }
 
-  // Calculate due date (15 days from invoice date)
   const invoiceDate = new Date(invoice.date);
   const dueDate = new Date(invoiceDate);
   dueDate.setDate(dueDate.getDate() + 15);
@@ -159,13 +187,15 @@ const InvoiceViewPage: React.FC = () => {
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   };
 
-  const togglePaymentStatus = () => {
+  const togglePaymentStatus = async () => {
     const updatedInvoice = { 
       ...invoice, 
       status: invoice.status === 'paid' ? 'unpaid' as const : 'paid' as const,
       paidAmount: invoice.status === 'paid' ? 0 : invoice.total 
     };
-    updateInvoice(updatedInvoice);
+    
+    await updateInvoice(updatedInvoice);
+    setInvoice(updatedInvoice);
     
     toast({
       title: 'Payment Status Updated',
@@ -182,7 +212,7 @@ const InvoiceViewPage: React.FC = () => {
     });
   };
   
-  const handlePartialPayment = () => {
+  const handlePartialPayment = async () => {
     if (!paymentAmount || paymentAmount <= 0) {
       toast({
         title: 'Invalid Amount',
@@ -201,7 +231,7 @@ const InvoiceViewPage: React.FC = () => {
       return;
     }
     
-    recordPartialPayment(
+    await recordPartialPayment(
       invoice.id,
       paymentAmount,
       {
@@ -211,12 +241,22 @@ const InvoiceViewPage: React.FC = () => {
       }
     );
     
+    if (invoiceId) {
+      const updatedInvoice = await getInvoice(invoiceId);
+      if (updatedInvoice) setInvoice(updatedInvoice);
+      
+      const updatedTransactions = await getTransactionsByInvoice(invoiceId);
+      setTransactions(updatedTransactions);
+      
+      const updatedBalance = await getInvoiceRemainingBalance(invoiceId);
+      setRemainingBalance(updatedBalance);
+    }
+    
     toast({
       title: 'Payment Recorded',
       description: `₹${paymentAmount.toLocaleString('en-IN')} payment has been recorded.`,
     });
     
-    // Reset form and close dialog
     setPaymentAmount(0);
     setPaymentReference('');
     setPaymentDescription('');
@@ -226,9 +266,7 @@ const InvoiceViewPage: React.FC = () => {
   const isPurchaseInvoice = party.type === 'supplier';
   const invoiceTitle = isPurchaseInvoice ? 'PURCHASE BILL' : 'TAX INVOICE';
   
-  // Calculate taxable amount (subtotal - discount)
   const taxableAmount = invoice.subtotal - invoice.discount;
-  // Calculate CGST and SGST (half of GST each)
   const cgstAmount = invoice.gstAmount / 2;
   const sgstAmount = invoice.gstAmount / 2;
   
@@ -357,7 +395,6 @@ const InvoiceViewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Payment Transactions */}
       {transactions.length > 0 && (
         <div className="border rounded-md p-4 no-print">
           <h2 className="text-lg font-medium mb-3">Payment History</h2>
@@ -398,10 +435,8 @@ const InvoiceViewPage: React.FC = () => {
         </div>
       )}
 
-      {/* New Invoice Container that will be printed */}
       <div id="invoice-print-container" className="bg-white border border-gray-200 rounded-md shadow-sm p-6 print:p-4 print:shadow-none" ref={printRef}>
         <div className="print-only-invoice mx-auto max-w-[210mm] print:max-w-full">
-          {/* Header Section */}
           <div className="flex justify-between border-b border-gray-300 pb-4">
             <div>
               <h1 className="text-xl font-bold">{businessInfo.name}</h1>
@@ -418,7 +453,6 @@ const InvoiceViewPage: React.FC = () => {
             </div>
           </div>
           
-          {/* Party Details */}
           <div className="mt-6 mb-8">
             <h3 className="font-semibold mb-2">{isPurchaseInvoice ? 'Supplier:' : 'Customer:'}</h3>
             <p className="font-semibold">{party.name}</p>
@@ -428,7 +462,6 @@ const InvoiceViewPage: React.FC = () => {
             <p className="text-sm">Contact: {party.mobile || 'N/A'}</p>
           </div>
           
-          {/* Items Table */}
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-gray-400">
@@ -454,7 +487,6 @@ const InvoiceViewPage: React.FC = () => {
             </tbody>
           </table>
           
-          {/* Summary and Payment Info */}
           <div className="flex mt-6">
             <div className="w-1/2 pr-4">
               <div className="border border-gray-300 rounded p-4">
@@ -538,7 +570,6 @@ const InvoiceViewPage: React.FC = () => {
             </div>
           </div>
           
-          {/* Terms and Signature */}
           <div className="mt-10 pt-4 border-t border-gray-300 flex justify-between">
             <div className="w-1/2">
               <h3 className="font-semibold mb-2">Terms & Conditions:</h3>

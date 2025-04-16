@@ -20,7 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 const defaultInvoiceItem: InvoiceItem = {
   id: '',
   product: '',
-  productId: '', // Add productId field
+  productId: '',
   qty: 1,
   rate: 0,
   amount: 0,
@@ -37,26 +37,24 @@ const InvoiceFormPage: React.FC = () => {
   const invoiceType = searchParams.get('type') || 'sales';
   const isPurchaseInvoice = invoiceType === 'purchase';
   
-  const initialInvoice = invoiceId 
-    ? getInvoice(invoiceId) 
-    : {
-        id: '',
-        invoiceNumber: '',
-        partyId: searchParams.get('partyId') || '',
-        date: new Date().toISOString().substring(0, 10),
-        items: [{ ...defaultInvoiceItem, id: crypto.randomUUID() }],
-        subtotal: 0,
-        gstPercentage: 18,
-        gstAmount: 0,
-        discount: 0,
-        total: 0,
-        paidAmount: 0,
-        status: 'unpaid' as const,
-      };
+  const [invoice, setInvoice] = useState<Invoice>({
+    id: '',
+    invoiceNumber: '',
+    partyId: searchParams.get('partyId') || '',
+    date: new Date().toISOString().substring(0, 10),
+    items: [{ ...defaultInvoiceItem, id: crypto.randomUUID() }],
+    subtotal: 0,
+    gstPercentage: 18,
+    gstAmount: 0,
+    discount: 0,
+    total: 0,
+    paidAmount: 0,
+    status: 'unpaid' as const,
+  });
   
-  const [invoice, setInvoice] = useState<Invoice>(initialInvoice);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [stockWarnings, setStockWarnings] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
 
   // Calculate totals whenever items, GST or discount changes
   useEffect(() => {
@@ -74,34 +72,50 @@ const InvoiceFormPage: React.FC = () => {
 
   // Reset form if invoice ID changes
   useEffect(() => {
-    if (invoiceId) {
-      const existingInvoice = getInvoice(invoiceId);
-      if (existingInvoice) {
-        setInvoice(existingInvoice);
-      } else {
-        navigate('/invoices');
+    const loadInvoice = async () => {
+      setLoading(true);
+      if (invoiceId) {
+        try {
+          const existingInvoice = await getInvoice(invoiceId);
+          if (existingInvoice) {
+            setInvoice(existingInvoice);
+          } else {
+            navigate('/invoices');
+          }
+        } catch (error) {
+          console.error("Error loading invoice:", error);
+          navigate('/invoices');
+        }
       }
-    }
+      setLoading(false);
+    };
+    
+    loadInvoice();
   }, [invoiceId, getInvoice, navigate]);
 
   // Check stock levels for customer invoices (sales)
   useEffect(() => {
-    if (isPurchaseInvoice || invoiceId) return; // Skip for purchase invoices or existing invoices
+    if (isPurchaseInvoice || invoiceId || loading) return; // Skip for purchase invoices or existing invoices or while loading
     
-    const newWarnings: Record<string, string> = {};
-    
-    invoice.items.forEach((item, index) => {
-      if (item.productId) {
-        const product = products.find(p => p.id === item.productId);
-        if (product && item.qty > product.stock) {
-          newWarnings[`items[${index}]`] = 
-            `Warning: Requested quantity (${item.qty}) exceeds available stock (${product.stock} ${product.unit})`;
+    const checkStock = async () => {
+      const newWarnings: Record<string, string> = {};
+      
+      for (let i = 0; i < invoice.items.length; i++) {
+        const item = invoice.items[i];
+        if (item.productId) {
+          const product = products.find(p => p.id === item.productId);
+          if (product && item.qty > product.stock) {
+            newWarnings[`items[${i}]`] = 
+              `Warning: Requested quantity (${item.qty}) exceeds available stock (${product.stock} ${product.unit})`;
+          }
         }
       }
-    });
+      
+      setStockWarnings(newWarnings);
+    };
     
-    setStockWarnings(newWarnings);
-  }, [invoice.items, products, isPurchaseInvoice, invoiceId]);
+    checkStock();
+  }, [invoice.items, products, isPurchaseInvoice, invoiceId, loading]);
 
   const handlePartyChange = (partyId: string) => {
     setInvoice(prev => ({ ...prev, partyId }));
@@ -258,7 +272,7 @@ const InvoiceFormPage: React.FC = () => {
     }
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = async (): Promise<boolean> => {
     const newErrors: Record<string, string> = {};
     
     if (!invoice.partyId) {
@@ -269,60 +283,72 @@ const InvoiceFormPage: React.FC = () => {
       newErrors.date = 'Please select a date';
     }
     
-    invoice.items.forEach((item, index) => {
+    for (let i = 0; i < invoice.items.length; i++) {
+      const item = invoice.items[i];
+      
       if (!item.product) {
-        newErrors[`items[${index}].product`] = 'Product name is required';
+        newErrors[`items[${i}].product`] = 'Product name is required';
       }
       
       if (item.qty <= 0) {
-        newErrors[`items[${index}].qty`] = 'Quantity must be greater than 0';
+        newErrors[`items[${i}].qty`] = 'Quantity must be greater than 0';
       }
       
       if (item.rate <= 0) {
-        newErrors[`items[${index}].rate`] = 'Rate must be greater than 0';
+        newErrors[`items[${i}].rate`] = 'Rate must be greater than 0';
       }
       
       // Check stock for customer invoices (if new invoice)
       if (!isPurchaseInvoice && !invoiceId && item.productId) {
-        if (!hasEnoughStock(item.productId, item.qty)) {
-          newErrors[`items[${index}].qty`] = `Not enough stock available. Please reduce quantity.`;
+        const hasStock = await hasEnoughStock(item.productId, item.qty);
+        if (!hasStock) {
+          newErrors[`items[${i}].qty`] = `Not enough stock available. Please reduce quantity.`;
         }
       }
-    });
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (validateForm()) {
+    if (await validateForm()) {
       // Update paidAmount based on status
       const finalInvoice = {
         ...invoice,
         paidAmount: invoice.status === 'paid' ? invoice.total : 0
       };
       
-      if (invoiceId) {
-        updateInvoice(finalInvoice);
+      try {
+        if (invoiceId) {
+          await updateInvoice(finalInvoice);
+          toast({
+            title: 'Invoice Updated',
+            description: `Invoice ${invoice.invoiceNumber} has been updated successfully.`,
+          });
+        } else {
+          const savedInvoice = await addInvoice(finalInvoice);
+          toast({
+            title: 'Invoice Created',
+            description: `Invoice ${savedInvoice.invoiceNumber} has been created successfully.`,
+          });
+        }
+        
+        // Redirect to appropriate page based on invoice type
+        if (isPurchaseInvoice) {
+          navigate(`/purchase-invoices`);
+        } else {
+          navigate(`/invoices/${invoiceId || invoice.id}`);
+        }
+      } catch (error) {
+        console.error("Error saving invoice:", error);
         toast({
-          title: 'Invoice Updated',
-          description: `Invoice ${invoice.invoiceNumber} has been updated successfully.`,
+          title: 'Error',
+          description: 'There was an error saving the invoice. Please try again.',
+          variant: 'destructive',
         });
-      } else {
-        const savedInvoice = addInvoice(finalInvoice);
-        toast({
-          title: 'Invoice Created',
-          description: `Invoice ${savedInvoice.invoiceNumber} has been created successfully.`,
-        });
-      }
-      
-      // Redirect to appropriate page based on invoice type
-      if (isPurchaseInvoice) {
-        navigate(`/purchase-invoices`);
-      } else {
-        navigate(`/invoices/${invoiceId || invoice.id}`);
       }
     } else {
       toast({

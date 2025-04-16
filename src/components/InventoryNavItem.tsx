@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Package, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -7,8 +7,23 @@ import { cn } from '@/lib/utils';
 import { getLowStockProducts, getOutOfStockProducts } from '@/lib/storage';
 
 const InventoryNavItem: React.FC = () => {
-  const lowStockCount = getLowStockProducts().length;
-  const outOfStockCount = getOutOfStockProducts().length;
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [outOfStockCount, setOutOfStockCount] = useState(0);
+  
+  useEffect(() => {
+    const fetchCounts = async () => {
+      const [lowStock, outOfStock] = await Promise.all([
+        getLowStockProducts(),
+        getOutOfStockProducts()
+      ]);
+      
+      setLowStockCount(lowStock.length);
+      setOutOfStockCount(outOfStock.length);
+    };
+    
+    fetchCounts();
+  }, []);
+  
   const hasAlerts = lowStockCount > 0 || outOfStockCount > 0;
 
   return (
