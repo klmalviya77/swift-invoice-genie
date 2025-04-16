@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { Invoice, Return } from '@/lib/storage';
@@ -12,7 +13,22 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useForm } from 'react-hook-form';
 import { toast } from '@/hooks/use-toast';
-import { ArrowLeft, AlertCircle, CreditCard, Printer, ArrowRight, RotateCcw } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { 
+  ArrowLeft, 
+  AlertCircle, 
+  CreditCard, 
+  Printer, 
+  ArrowRight, 
+  RotateCcw, 
+  Share, 
+  Mail, 
+  Download, 
+  Check, 
+  X, 
+  FilePdf,
+  ChevronDown
+} from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -21,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import html2pdf from 'html2pdf.js';
 
 interface PaymentFormValues {
   amount: number;
@@ -31,13 +48,14 @@ interface PaymentFormValues {
 
 const InvoiceViewPage: React.FC = () => {
   const navigate = useNavigate();
-  const { invoices, parties, getParty, getInvoiceRemainingBalance, recordPartialPayment, returns, loading } = useApp();
+  const { invoices, parties, getParty, getInvoiceRemainingBalance, recordPartialPayment, returns, loading, updateInvoice } = useApp();
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [partyName, setPartyName] = useState<string>('');
   const [partyType, setPartyType] = useState<'customer' | 'supplier' | ''>('');
   const [remainingAmount, setRemainingAmount] = useState<number>(0);
   const [relatedReturns, setRelatedReturns] = useState<Return[]>([]);
+  const invoicePrintRef = useRef<HTMLDivElement>(null);
   
   // Get invoice details
   useEffect(() => {
@@ -117,6 +135,132 @@ const InvoiceViewPage: React.FC = () => {
         variant: "destructive"
       });
     }
+  };
+
+  // Handle the mark as paid/unpaid functionality
+  const handleStatusChange = async (status: 'paid' | 'unpaid') => {
+    if (!invoice) return;
+    
+    try {
+      const updatedInvoice = { 
+        ...invoice, 
+        status, 
+        paidAmount: status === 'paid' ? invoice.total : 0 
+      };
+      
+      await updateInvoice(updatedInvoice);
+      setInvoice(updatedInvoice);
+      setRemainingAmount(status === 'paid' ? 0 : invoice.total);
+      
+      toast({
+        title: "Success",
+        description: `Invoice marked as ${status}`
+      });
+    } catch (error) {
+      console.error(`Error marking invoice as ${status}:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to mark invoice as ${status}`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Handle the print functionality
+  const handlePrint = () => {
+    const printContent = document.getElementById('invoice-print-content');
+    if (!printContent) return;
+    
+    const originalContent = document.body.innerHTML;
+    const printStyles = `
+      <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        .print-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
+        .print-title { font-size: 24px; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .total-section { margin-top: 20px; text-align: right; }
+        .footer { margin-top: 50px; border-top: 1px solid #ddd; padding-top: 20px; }
+        @media print {
+          body { padding: 0mm; }
+          button { display: none; }
+        }
+      </style>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write('<html><head><title>Invoice Print</title>');
+      printWindow.document.write(printStyles);
+      printWindow.document.write('</head><body>');
+      printWindow.document.write(printContent.innerHTML);
+      printWindow.document.write('</body></html>');
+      printWindow.document.close();
+      
+      // Wait for the content to load before printing
+      printWindow.onload = function() {
+        printWindow.focus();
+        printWindow.print();
+        //printWindow.close();
+      };
+    }
+  };
+
+  // Generate PDF functionality
+  const generatePDF = () => {
+    const element = document.getElementById('invoice-print-content');
+    if (!element) return;
+    
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `Invoice-${invoice?.invoiceNumber}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    
+    toast({
+      title: "Generating PDF",
+      description: "Please wait..."
+    });
+    
+    html2pdf().from(element).set(opt).save().then(() => {
+      toast({
+        title: "Success",
+        description: "PDF downloaded successfully"
+      });
+    }).catch((error) => {
+      console.error('Error generating PDF:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate PDF",
+        variant: "destructive"
+      });
+    });
+  };
+
+  // Share via email
+  const shareViaEmail = () => {
+    if (!invoice) return;
+    
+    const subject = encodeURIComponent(`Invoice #${invoice.invoiceNumber}`);
+    const body = encodeURIComponent(
+      `Dear ${partyName},\n\nPlease find attached invoice #${invoice.invoiceNumber} dated ${formatDate(invoice.date)} for amount ₹${invoice.total.toLocaleString('en-IN')}.\n\nRegards,\n${invoice.companyName || 'Company Name'}`
+    );
+    
+    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+  };
+
+  // Share via WhatsApp
+  const shareViaWhatsApp = () => {
+    if (!invoice) return;
+    
+    const text = encodeURIComponent(
+      `Invoice #${invoice.invoiceNumber}\nDate: ${formatDate(invoice.date)}\nAmount: ₹${invoice.total.toLocaleString('en-IN')}\nStatus: ${invoice.status.toUpperCase()}`
+    );
+    
+    window.open(`https://wa.me/?text=${text}`, '_blank');
   };
 
   if (loading) {
@@ -220,6 +364,65 @@ const InvoiceViewPage: React.FC = () => {
     </Card>
   );
 
+  // Content for printing and PDF
+  const invoicePrintContent = (
+    <div id="invoice-print-content" className="hidden print:block">
+      <div className="print-header">
+        <div>
+          <div className="print-title">INVOICE</div>
+          <div>Invoice #: {invoice.invoiceNumber}</div>
+          <div>Date: {formatDate(invoice.date)}</div>
+        </div>
+        <div>
+          <div>{invoice.companyName || 'Company Name'}</div>
+          <div>{invoice.companyAddress || 'Company Address'}</div>
+          <div>GST: {invoice.companyGST || 'N/A'}</div>
+        </div>
+      </div>
+      
+      <div className="print-party-info">
+        <div>
+          <strong>Bill To:</strong>
+          <div>{partyName}</div>
+          <div>{invoice.partyAddress || ''}</div>
+          <div>{invoice.partyGST ? `GST: ${invoice.partyGST}` : ''}</div>
+        </div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Quantity</th>
+            <th>Rate</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {invoice.items.map((item, index) => (
+            <tr key={index}>
+              <td>{item.product}</td>
+              <td>{item.qty}</td>
+              <td>₹{item.rate.toFixed(2)}</td>
+              <td>₹{item.amount.toFixed(2)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      
+      <div className="total-section">
+        <div>Subtotal: ₹{invoice.subtotal.toFixed(2)}</div>
+        <div>GST ({invoice.gstPercentage}%): ₹{invoice.gstAmount.toFixed(2)}</div>
+        <div><strong>Total: ₹{invoice.total.toFixed(2)}</strong></div>
+      </div>
+      
+      <div className="footer">
+        <div><strong>Payment Terms:</strong> {invoice.paymentTerm || 'N/A'}</div>
+        <div><strong>Notes:</strong> {invoice.notes || ''}</div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -232,9 +435,60 @@ const InvoiceViewPage: React.FC = () => {
             View and manage invoice #{invoice.invoiceNumber}
           </p>
         </div>
-        <Button onClick={() => window.print()}>
-          <Printer className="mr-2 h-4 w-4" /> Print Invoice
-        </Button>
+        <div className="flex gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Share className="mr-2 h-4 w-4" /> Share <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={shareViaWhatsApp}>
+                <span className="mr-2">📱</span> Share via WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={shareViaEmail}>
+                <Mail className="mr-2 h-4 w-4" /> Share via Email
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <FilePdf className="mr-2 h-4 w-4" /> Export <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={generatePDF}>
+                <Download className="mr-2 h-4 w-4" /> Download PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handlePrint}>
+                <Printer className="mr-2 h-4 w-4" /> Print Invoice
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant={invoice.status === 'paid' ? 'default' : 'destructive'}>
+                {invoice.status === 'paid' ? (
+                  <><Check className="mr-2 h-4 w-4" /> Paid</>
+                ) : (
+                  <><X className="mr-2 h-4 w-4" /> Unpaid</>
+                )}
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleStatusChange('paid')}>
+                <Check className="mr-2 h-4 w-4 text-green-500" /> Mark as Paid
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleStatusChange('unpaid')}>
+                <X className="mr-2 h-4 w-4 text-red-500" /> Mark as Unpaid
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <Tabs defaultValue="details" className="space-y-4">
@@ -461,6 +715,9 @@ const InvoiceViewPage: React.FC = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      
+      {/* Hidden content for printing/PDF */}
+      {invoicePrintContent}
     </div>
   );
 };
