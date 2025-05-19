@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useApp } from '@/contexts/AppContext';
@@ -8,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarIcon, ChartBarIcon, ChartPieIcon, FileText } from "lucide-react";
-import { DatePicker } from "@/components/ui/calendar";
+import { DatePicker } from "@/components/ui/date-picker";
 
 import SummaryCards from '@/components/reports/SummaryCards';
 import TransactionsFilter from '@/components/reports/TransactionsFilter';
@@ -202,6 +201,7 @@ const ReportsPage: React.FC = () => {
   const cashTransactions = getCashTransactions();
   const bankTransactions = getBankTransactions();
 
+  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-IN', {
@@ -211,6 +211,7 @@ const ReportsPage: React.FC = () => {
     });
   };
 
+  // Get party name
   const getPartyName = (partyId: string) => {
     const party = parties.find(p => p.id === partyId);
     return party ? party.name : 'Unknown';
@@ -301,10 +302,6 @@ const ReportsPage: React.FC = () => {
                   date={new Date(startDate)} 
                   onSelect={(date) => setStartDate(date.toISOString().split('T')[0])} 
                 />
-                <Button variant="outline" size="sm">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formatDate(startDate)}
-                </Button>
               </div>
             </div>
             
